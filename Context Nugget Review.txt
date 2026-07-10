@@ -1,0 +1,51 @@
+I reviewed jxburros/AI-Context-Nugget via the GitHub connector. The repo is private, very new, and was seeded today, July 9, 2026, by PR #1. There are no GitHub Actions runs or commit statuses on the latest commit, and local clone failed because the machine’s gh/Git credential state is invalid, so this is a source/code/product audit rather than a locally executed test run.
+Top Findings
+Stale chunks can accumulate when sources or memories are updated.
+engine.ts adds new chunks every time addSource() or addMemory() is called, while memoryStore.ts only upserts sources/chunks by chunk ID. Because chunk IDs include content/text, updating a source or memory can leave old chunks searchable. This is the biggest correctness risk for a memory/context library.
+
+Memory policy hooks are defined but not really enforced on retrieval.
+types.ts defines shouldRetrieve and shouldExpire, but engine.ts retrieves chunks directly from the store and does not apply those hooks. The README’s “approval-policy hooks” claim is only partially true.
+
+Configured markdown chunkers are ignored for markdown sources.
+In engine.ts, addSource() always uses a fresh markdownChunker() when source.kind === 'markdown'. If a consumer provides a custom chunker in ContextEngineOptions, markdown sources bypass it.
+
+Diagnostics understate actual search scope.
+pack.ts reports searchedChunks: results.length, but results is already the retrieved/ranked result set, not all candidate chunks. For an “auditable context packet,” this should distinguish candidateChunks, retrievedResults, includedItems, and excludedItems.
+
+Safety helpers exist but are not wired into packing by default.
+safety.ts has useful secret-shaped redaction and an untrusted data boundary, but redactText() is not automatically applied during ingestion, retrieval, or packing. That is fine as a design choice, but the docs should be explicit: untrusted wrapping is supported; automatic redaction is not guaranteed.
+
+What Works Well
+The concept is strong. “Context packets before prompt strings” is a real, useful abstraction. The package draws a clean boundary: it does retrieval, citation, budgeting, packing, and memory records without trying to become a model SDK, vector DB, full agent framework, UI, or hosted memory service.
+The code is pleasantly dependency-light. Runtime dependencies are effectively zero, with TypeScript as a dev dependency. That makes it easy to embed in apps, GitHub Actions, browser-ish environments, or local-first tools.
+The initial API surface is coherent: ContextEngine, ContextSource, ContextChunk, ContextPacket, ContextPack, chunkers, BM25/keyword/hybrid retrievers, budgets, citations, ranking, memory records, and AI Nugget bridge helpers all point in the same direction.
+The tests are small but targeted. They cover markdown chunk metadata, BM25 retrieval, untrusted packing, budget enforcement, memory chunks, manual packets, policy source selection, and source ranking.
+The product positioning has a nice wedge: auditable, cited, budgeted, trust-aware context assembly for AI apps.
+What Does Not Work Yet / Not Ready
+It is not release-hardened yet. There is no CI, no workflow status, no release automation, no npm publish verification, no benchmark suite, no compatibility matrix, and no examples that prove end-to-end use from a consumer app after package installation.
+The store is too naive for production memory use. It needs deletion, replacement, reindexing, compaction, source removal, memory supersession cleanup, and stale chunk prevention.
+The retrieval story is useful but basic. BM25 and keyword are good defaults, but there is no incremental index, no field weighting beyond simple title matching, no semantic adapter contract yet, no evaluation fixtures beyond small unit tests, and no recall/precision-style scoring.
+The docs are persuasive but slightly ahead of the implementation. The README says “finds, ranks, cites, budgets, and packs context,” which is fair, but phrases around policy hooks, redaction, and memory lifecycle should be tightened so users do not assume stronger guarantees than the package currently provides.
+Recommended Fixes
+First priority:
+Add replaceSource(), removeSource(), and removeChunksBySourceId() or make addSource() replace chunks for the same source by default.
+When updating a memory record, remove or supersede old memory chunks.
+Apply MemoryPolicy.shouldRetrieve and shouldExpire during retrieval, or remove those claims from v0 docs.
+Preserve custom chunker behavior for markdown sources, perhaps with an explicit markdownChunker option.
+Fix diagnostics so packets report candidate chunk count separately from retrieved and included counts.
+Add CI: npm install, npm run typecheck, npm run build, npm test.
+Second priority:
+Add tests for source update/reindex behavior, memory update behavior, custom chunker behavior, redaction expectations, empty query behavior, scope/layer filtering, and semantic degradation.
+Add a “security model” doc clarifying what the library does and does not protect.
+Add a real examples/node-docs-qa or examples/github-issue-triage fixture that a user can run after npm install.
+Add package provenance/release checklist before publishing.
+Marketability
+Potential: solid, but only if positioned narrowly.
+The market is crowded if this is pitched as “RAG framework” or “AI memory.” It will get buried under LangChain, LlamaIndex, Haystack, Mastra, Mem0, Zep, Chroma, LanceDB, and provider-native retrieval tools.
+The better pitch is sharper:
+“A lightweight TypeScript SDK for building auditable, cited, budgeted context packets before you call an LLM.”
+
+That is marketable to developers building AI assistants inside existing products, QA/repo-review tools, local-first apps, internal copilots, and workflow agents where visibility, source boundaries, and context budgets matter more than massive orchestration.
+The brand “Context Nugget” is friendly and memorable, but for broader adoption I’d consider pairing it with a more literal tagline everywhere: “auditable context packets for AI apps.” The personal npm scope @jxburros/context-nugget is fine for a seed, but a neutral org scope would help if this becomes serious.
+Verdict
+This is a promising seed package with a genuinely useful abstraction and a clean early architecture. It is not yet production-ready or market-ready, mostly because source/memory lifecycle, policy enforcement, diagnostics, CI, and release proof are underbuilt. Fix those, add a couple of compelling runnable examples, and it could become a credible small-but-useful infrastructure library in the AI app stack.
