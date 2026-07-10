@@ -3,7 +3,6 @@ import { estimateTokens, makeId, nowIso } from './util.js';
 
 export const manualMemoryPolicy: MemoryPolicy = {
   mode: 'manual',
-  shouldStore: () => ({ store: false, reason: 'manual policy does not auto-store memories' }),
 };
 
 export function memoryRecordFromCandidate(candidate: MemoryCandidate, decision?: MemoryDecision): MemoryRecord {
@@ -54,9 +53,24 @@ export function memoryToChunk(record: MemoryRecord): ContextChunk {
   };
 }
 
+/**
+ * Mode x hook contract:
+ * - `manual`: never stores; `shouldStore` is not consulted.
+ * - `suggested`: never stores directly. If `shouldStore` approves, the decision comes
+ *   back as `{ store: false, suggested: true }` so the app can route it to an approval
+ *   UI and call `addMemory` itself once approved.
+ * - `auto`: `shouldStore` decides; defaults to storing when no hook is configured.
+ */
 export async function shouldStoreMemory(policy: MemoryPolicy, candidate: MemoryCandidate): Promise<MemoryDecision> {
-  if (policy.mode === 'manual') return { store: false, reason: 'manual memory mode' };
+  if (policy.mode === 'manual') return { store: false, reason: 'manual memory mode never auto-stores' };
+
+  if (policy.mode === 'suggested') {
+    if (!policy.shouldStore) return { store: false, suggested: true, reason: 'suggested memory requires app approval' };
+    const decision = await policy.shouldStore(candidate);
+    if (!decision.store) return decision;
+    return { ...decision, store: false, suggested: true };
+  }
+
   if (policy.shouldStore) return policy.shouldStore(candidate);
-  if (policy.mode === 'suggested') return { store: false, reason: 'suggested memory requires app approval' };
   return { store: true, reason: 'auto memory policy allowed storage' };
 }

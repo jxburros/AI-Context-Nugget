@@ -1,0 +1,11 @@
+{
+  "name": "example-ai-nugget-chatbot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types index.ts"
+  },
+  "dependencies": {
+    "@jxburros/context-nugget": "file:../.."
+  }
+}

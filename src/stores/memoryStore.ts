@@ -1,7 +1,7 @@
-import type { ContextChunk, ContextSource, ContextStore, MemoryRecord, RetrievalQuery, StoreSnapshot } from '../types.js';
+import type { ChunkFilter, ContextChunk, ContextSource, ContextStore, MemoryRecord, RetrievalQuery, StoreSnapshot } from '../types.js';
 import { metadataMatches, nowIso } from '../util.js';
 
-function recordIsActive(record: MemoryRecord): boolean {
+export function recordIsActive(record: MemoryRecord): boolean {
   if ((record.status ?? 'active') !== 'active') return false;
   if (record.expiresAt && Date.parse(record.expiresAt) <= Date.now()) return false;
   return true;
@@ -47,12 +47,44 @@ export class InMemoryContextStore implements ContextStore {
     const sourceVisibility = new Map([...this.sources.values()].map((s) => [s.id, s.metadata?.hideFromAI !== true]));
     return [...this.chunks.values()].filter((chunk) => {
       if (sourceVisibility.get(chunk.source.sourceId) === false) return false;
+      const memoryId = chunk.metadata?.memoryId;
+      if (typeof memoryId === 'string') {
+        const record = this.memories.get(memoryId);
+        if (!record || !recordIsActive(record)) return false;
+      }
       return chunkMatchesQuery(chunk, query);
     });
   }
 
   listMemories(query?: RetrievalQuery): MemoryRecord[] {
     return [...this.memories.values()].filter((record) => memoryMatchesQuery(record, query));
+  }
+
+  getMemory(memoryId: string): MemoryRecord | undefined {
+    return this.memories.get(memoryId);
+  }
+
+  removeSource(sourceId: string): void {
+    this.sources.delete(sourceId);
+    this.removeChunks({ sourceId });
+  }
+
+  removeChunks(filter: ChunkFilter): number {
+    let removed = 0;
+    for (const [id, chunk] of this.chunks) {
+      const matchesSource = filter.sourceId !== undefined && chunk.source.sourceId === filter.sourceId;
+      const matchesMemory = filter.memoryId !== undefined && chunk.metadata?.memoryId === filter.memoryId;
+      if (matchesSource || matchesMemory) {
+        this.chunks.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  removeMemory(memoryId: string): void {
+    this.memories.delete(memoryId);
+    this.removeChunks({ memoryId });
   }
 
   export(): StoreSnapshot {
@@ -65,9 +97,9 @@ export class InMemoryContextStore implements ContextStore {
 
   import(snapshot: StoreSnapshot): void {
     this.clear();
-    for (const source of snapshot.sources) this.sources.set(source.id, source);
+    for (const source of snapshot.sources) this.sources.set(source.id, { ...source, updatedAt: source.updatedAt ?? nowIso() });
     for (const chunk of snapshot.chunks) this.chunks.set(chunk.id, chunk);
-    for (const memory of snapshot.memories) this.memories.set(memory.id, memory);
+    for (const memory of snapshot.memories) this.memories.set(memory.id, { ...memory, status: memory.status ?? 'active' });
   }
 
   clear(): void {

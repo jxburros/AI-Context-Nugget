@@ -1,11 +1,17 @@
 export function stableHash(input: string): string {
-  // FNV-1a 32-bit, small and deterministic across runtimes.
-  let hash = 0x811c9dc5;
+  // Two-lane FNV-1a 32-bit (~64 bits combined), small and deterministic across
+  // runtimes. Widened from a single 32-bit lane to push the birthday-bound
+  // collision point from ~77k inputs out to astronomically large corpora.
+  let h1 = 0x811c9dc5;
+  let h2 = (0x1000193 ^ input.length) >>> 0;
   for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
+    const c = input.charCodeAt(i);
+    h1 ^= c;
+    h1 = Math.imul(h1, 0x01000193) >>> 0;
+    h2 ^= c;
+    h2 = Math.imul(h2, 0x85ebca6b) >>> 0;
   }
-  return hash.toString(36).padStart(7, '0');
+  return `${h1.toString(36).padStart(7, '0')}${h2.toString(36).padStart(7, '0')}`;
 }
 
 export function makeId(prefix: string, seed: string): string {

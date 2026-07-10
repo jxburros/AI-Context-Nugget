@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['20.x', '22.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm pack --dry-run
+
+  examples:
+    # Examples run via `node --experimental-strip-types`, which needs Node 22.6+;
+    # pinned to a single Node version rather than matrixed with the test job.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Install and run each example against the built package
+        run: |
+          set -e
+          for dir in examples/*/; do
+            name=$(basename "$dir")
+            echo "== $name =="
+            (cd "$dir" && npm install --no-audit --no-fund)
+            output=$(cd "$dir" && node --experimental-strip-types index.ts)
+            echo "$output"
+            if [ -z "$output" ]; then
+              echo "Example $name produced no stdout output" >&2
+              exit 1
+            fi
+          done

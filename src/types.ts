@@ -78,6 +78,8 @@ export interface MemoryCandidate {
 
 export interface MemoryDecision {
   store: boolean;
+  /** True when the candidate was approved for a suggestion queue rather than stored directly (mode: 'suggested'). */
+  suggested?: boolean;
   reason?: string;
   record?: Partial<MemoryRecord>;
 }
@@ -151,7 +153,12 @@ export interface ContextPacket {
 }
 
 export interface ContextDiagnostics {
+  /** @deprecated Alias for `candidateChunks`, kept for one release. Use `candidateChunks` instead. */
   searchedChunks: number;
+  /** Chunks eligible for retrieval after store/policy filtering, before ranking. */
+  candidateChunks: number;
+  /** Results returned by the retriever (post-topK), before budget enforcement. */
+  retrievedResults: number;
   returnedItems: number;
   excludedItems?: number;
   estimatedTokens: number;
@@ -183,6 +190,11 @@ export interface StoreSnapshot {
   memories: MemoryRecord[];
 }
 
+export interface ChunkFilter {
+  sourceId?: string;
+  memoryId?: string;
+}
+
 export interface ContextStore {
   addSource(source: ContextSource): Promise<void> | void;
   addChunks(chunks: ContextChunk[]): Promise<void> | void;
@@ -190,6 +202,13 @@ export interface ContextStore {
   listSources(): Promise<ContextSource[]> | ContextSource[];
   listChunks(query?: RetrievalQuery): Promise<ContextChunk[]> | ContextChunk[];
   listMemories(query?: RetrievalQuery): Promise<MemoryRecord[]> | MemoryRecord[];
+  getMemory(memoryId: string): Promise<MemoryRecord | undefined> | MemoryRecord | undefined;
+  /** Removes the source record and all chunks derived from it. */
+  removeSource(sourceId: string): Promise<void> | void;
+  /** Removes chunks matching the filter; returns the number removed. */
+  removeChunks(filter: ChunkFilter): Promise<number> | number;
+  /** Removes the memory record and all chunks derived from it. */
+  removeMemory(memoryId: string): Promise<void> | void;
   export(): Promise<StoreSnapshot> | StoreSnapshot;
   import(snapshot: StoreSnapshot): Promise<void> | void;
   clear(): Promise<void> | void;
@@ -201,7 +220,6 @@ export interface Retriever {
 }
 
 export interface RankOptions {
-  maxItemsPerSource?: number;
   diversityPenalty?: number;
 }
 
@@ -211,6 +229,18 @@ export interface PackOptions {
   includeScores?: boolean;
   includeTrust?: boolean;
   trustBoundary?: 'none' | 'untrusted-source-data';
+  /**
+   * Per-pack random value to append to the untrusted-source-data fence
+   * delimiters. Apps should supply a fresh nonce per call; the library stays
+   * deterministic and does not generate randomness itself.
+   */
+  trustBoundaryNonce?: string;
+  /**
+   * Opt-in, best-effort secret redaction applied to each item's text before
+   * assembly. `true` uses the built-in `redactText`; a function lets apps
+   * supply their own redactor. Off by default.
+   */
+  redact?: boolean | ((text: string) => string);
   heading?: string;
 }
 
