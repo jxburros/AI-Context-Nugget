@@ -6,6 +6,7 @@ export * from './stores/memoryStore.js';
 export * from './retrieval/bm25.js';
 export * from './retrieval/keyword.js';
 export * from './retrieval/hybrid.js';
+export * from './retrieval/semantic.js';
 export * from './budget.js';
 export * from './rank.js';
 export * from './citations.js';

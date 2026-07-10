@@ -24,6 +24,7 @@ export class BM25Index {
   private readonly k1: number;
   private readonly b: number;
   private readonly chunks: ContextChunk[];
+  private readonly chunksById = new Map<string, ContextChunk>();
   private readonly tf = new Map<string, Map<number, number>>();
   private readonly df = new Map<string, number>();
   private readonly docLens: number[] = [];
@@ -38,6 +39,7 @@ export class BM25Index {
     for (let i = 0; i < chunks.length; i += 1) {
       const chunk = chunks[i];
       if (!chunk) continue;
+      this.chunksById.set(chunk.id, chunk);
       const tokens = tokenize(chunk.text);
       this.docLens.push(tokens.length);
       totalLen += tokens.length;
@@ -101,7 +103,7 @@ export class BM25Index {
   }
 
   getChunk(id: string): ContextChunk | undefined {
-    return this.chunks.find((chunk) => chunk.id === id);
+    return this.chunksById.get(id);
   }
 }
 

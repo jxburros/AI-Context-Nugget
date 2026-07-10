@@ -1,6 +1,6 @@
 # Context Nugget
 
-Context Nugget is a pliable context and memory scaffolding engine for AI apps.
+Context Nugget is a lightweight TypeScript SDK for **auditable, cited, budgeted context packets** for AI apps.
 
 It helps turn documents, memories, app state, workspace state, tool results, repo files, issue text, generated artifacts, and other sources into structured, cited, model-ready context.
 
@@ -12,21 +12,23 @@ AI Nugget     -> talks to model providers
 Your app      -> owns prompts, policy, storage, privacy, consent, UI, deletion, and lifecycle
 ```
 
-## What is included in this seed
+## What is included
 
 - Core public types for sources, chunks, memory records, layers, retrieval results, citations, packets, and packs.
-- Text and Markdown chunkers with stable IDs, line ranges, heading paths, estimated tokens, trust metadata, and source refs.
-- In-memory / JSON-serializable store.
+- Text and Markdown chunkers with stable IDs, exact offset-based line ranges, heading paths, estimated tokens, trust metadata, and source refs.
+- In-memory / JSON-serializable store with real lifecycle operations: `removeSource`, `removeChunks`, `removeMemory`, `getMemory`. Re-adding a source or memory **replaces** its previously indexed chunks.
 - Dependency-light BM25 retrieval ported from the same pure TypeScript idea used in AI-model-test.
-- Keyword and hybrid retrievers.
+- Keyword and reciprocal-rank-fusion (RRF) hybrid retrievers, plus a `semanticRetriever(embedder)` adapter contract for apps that bring their own embeddings.
 - Ranking helpers for source diversity, recency, importance, and confidence signals.
 - Budget enforcement for max items, chars, tokens, and items per source.
 - Citation formatting and source labels.
-- Trusted/untrusted context packing, including an untrusted-source-data boundary inspired by QAI-ality.
-- Manual memory records and approval-policy hooks. Auto-writing memory is not enabled by default.
+- Trusted/untrusted context packing, including an untrusted-source-data boundary (with sentinel-forgery hardening) inspired by QAI-ality. See `docs/security-model.md`.
+- Manual memory records with an enforced approval-policy contract (`manual` / `suggested` / `auto`) and real lifecycle: `shouldExpire`/`shouldRetrieve` are applied at retrieval time, and `supersedes` retires the memory it replaces. Auto-writing memory is not enabled by default.
+- Opt-in secret redaction (`PackOptions.redact`) and a metadata-minimalism default for packet items (`PacketOptions.metadataPolicy`).
 - AI Nugget bridge helpers that produce compatible message and metadata objects without importing AI Nugget.
 - Source selection helpers for policy-driven context and query-ranked source selection.
-- Tests and recipes for document Q&A, layered memory, untrusted repo review, GitHub issue context, workspace context, card knowledge, and spec-driven context.
+- Tests (see `tests/`) and recipes for document Q&A, layered memory, untrusted repo review, GitHub issue context, workspace context, card knowledge, and spec-driven context.
+- CI on Node 20.x/22.x (`.github/workflows/ci.yml`), including a job that installs and runs each example against the built package.
 
 ## Install / use
 
@@ -61,6 +63,8 @@ console.log(context.text);
 console.log(context.citations);
 ```
 
+`engine.addSource(source)` is idempotent by `source.id`: calling it again with updated content replaces the previously indexed chunks rather than leaving stale chunks retrievable alongside the new ones. Use `engine.removeSource(id)` to remove a source and its chunks entirely.
+
 ## AI Nugget bridge
 
 Context Nugget does not call models. The bridge returns plain objects compatible with AI Nugget-style message arrays and metadata.
@@ -77,9 +81,13 @@ const messages = [
 const metadata = asAiNuggetMetadata(context);
 ```
 
-## Manual memory
+## Memory: lifecycle and policy
 
-Memory is visible and explicit by default. Apps can add records manually or wire an approval flow through `MemoryPolicy`.
+Memory is visible and explicit by default. `MemoryPolicy.mode` controls whether/how `engine.suggestMemory(candidate)` can store a candidate:
+
+- `'manual'` — never auto-stores; `shouldStore` is not consulted. Apps call `engine.addMemory(record)` directly.
+- `'suggested'` — never stores directly, even if `shouldStore` approves. The decision comes back as `{ store: false, suggested: true }` so the app can route it through an approval UI and call `addMemory` once a human confirms.
+- `'auto'` — `shouldStore` decides; defaults to storing when no hook is configured.
 
 ```ts
 await engine.addMemory({
@@ -93,6 +101,13 @@ await engine.addMemory({
 });
 ```
 
+Memory lifecycle is enforced at retrieval time, not just in `listMemories`:
+
+- Re-adding a memory with the same `id` replaces its previous chunk.
+- A memory with `status: 'archived'`, `status: 'superseded'`, or a past `expiresAt` is excluded from retrieval — it does not leak in through its chunk even though the record itself still exists for audit purposes.
+- Adding a memory with `supersedes: [oldId, ...]` marks each superseded record `status: 'superseded'` and removes its chunks.
+- `memoryPolicy.shouldExpire`/`shouldRetrieve`, when configured, are consulted for every memory-backed chunk on every `retrieve()` call; drops are recorded in `packet.diagnostics.reasons`.
+
 ## Retrieval strategies
 
 ```ts
@@ -101,7 +116,17 @@ await engine.retrieve({ query: 'project context stale', strategy: 'keyword' });
 await engine.retrieve({ query: 'project context stale', strategy: 'hybrid' });
 ```
 
-If an app requests `strategy: 'semantic'` without configuring a semantic retriever, the packet is returned in degraded mode with a visible fallback reason rather than failing silently.
+`strategy` resolves in this order: an explicit `retrievers: { [strategy]: Retriever }` map entry, then the engine's configured default `retriever` (if its own `mode` already matches the requested strategy — so a custom-tuned `bm25Retriever({ k1, b })` passed as `retriever` is honored by `strategy: 'bm25'` without needing to also register it in `retrievers`), then a built-in default for `'keyword'`/`'hybrid'`/`'bm25'`. A strategy that names a mode nothing above provides — including `'semantic'` with no embedder configured — returns the packet in degraded mode with a visible `degradedReason` rather than failing silently:
+
+```ts
+import { semanticRetriever } from '@jxburros/context-nugget';
+
+const engine = new ContextEngine({
+  retrievers: { semantic: semanticRetriever(myEmbedder) },
+});
+
+await engine.retrieve({ query: 'project context stale', strategy: 'semantic' }); // no longer degraded
+```
 
 ## Context packets before prompt strings
 
@@ -114,15 +139,22 @@ const packet = await engine.retrieve({
 
 console.log(packet.visibilitySummary);
 console.log(packet.diagnostics);
+// { candidateChunks, retrievedResults, returnedItems, excludedItems, estimatedTokens, estimatedChars, reasons }
 
 const pack = packContext(packet, {
   trustBoundary: 'untrusted-source-data',
+  trustBoundaryNonce: myRandomNoncePerCall, // optional, app-supplied
   includeCitations: true,
   includeTrust: true,
+  redact: true, // opt-in, best-effort secret redaction; off by default
 });
 ```
 
-The packet answers the questions the app and user will eventually care about: what was searched, what was included, which sources were used, whether retrieval degraded, how much budget was used, and what text the model would see.
+The packet answers the questions the app and user will eventually care about: what was searched (`diagnostics.candidateChunks`), what the retriever returned before budgeting (`diagnostics.retrievedResults`), what was actually included/excluded, which sources were used, whether retrieval degraded, how much budget was used, and what text the model would see.
+
+## Trust boundary and redaction
+
+`packContext({ trustBoundary: 'untrusted-source-data' })` wraps packed text in fenced delimiters and neutralizes any fence-like line inside the wrapped content, so retrieved content cannot forge a fake closing fence to smuggle instructions outside the boundary. `PackOptions.redact` (`true`, or a custom `(text) => string`) applies best-effort secret redaction per item; it is off by default and does not claim complete coverage. See `docs/security-model.md` for exactly what this library guarantees, what it does not, and what stays app-owned.
 
 ## Non-goals
 
@@ -143,6 +175,10 @@ Context Nugget does not own:
 
 Those belong to the consuming app.
 
+## Examples
+
+`examples/` in this repository has three runnable, self-contained examples (`minimal-doc-qa`, `ai-nugget-chatbot`, `github-issue-triage`), each with its own `package.json` depending on the local build (`file:../..`). They are not part of the published npm package; clone the repo, run `npm run build` at the root, then `cd examples/<name> && npm install && npm start`.
+
 ## Design lineage
 
 This seed intentionally borrows proven patterns from the surrounding portfolio:
@@ -158,4 +194,4 @@ This seed intentionally borrows proven patterns from the surrounding portfolio:
 - **ai-agent-skills:** curated operational memory as a source kind.
 - **AI Nugget:** provider communication remains separate.
 
-See `design.md` and `recipes/` for details.
+See `design.md`, `docs/security-model.md`, and `recipes/` for details.

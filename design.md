@@ -75,6 +75,10 @@ A packet records query, layers, items, sources, budget, retrieval mode, degraded
 
 A `ContextPack` is a model-ready representation of a packet. It contains prompt-ready text but preserves citations, sources, token estimates, and packet metadata.
 
+## Lifecycle
+
+Sources and memories are addressed by stable `id`. Re-adding either one replaces its previously indexed chunks — updated content does not leave stale chunks retrievable alongside the new ones. A memory's `status` (`active` / `archived` / `superseded`) and `expiresAt` are enforced at retrieval time, not just by `listMemories`: an archived, superseded, or expired memory's chunk is excluded from every `retrieve()` call, even though the record itself persists for audit. Adding a memory with `supersedes: [oldId, ...]` marks each superseded record accordingly and removes its chunks. `removeSource`/`removeChunks`/`removeMemory` on `ContextStore` make content unreachable through Context Nugget's own retrieval path (they do not reach into copies the app may have made elsewhere — see `docs/security-model.md`).
+
 ## Default retrieval stance
 
 BM25 ships first because it is deterministic, dependency-light, testable, and does not require embeddings or a vector database.
@@ -93,29 +97,32 @@ Retrieved content is not authority. It can be wrong, stale, malicious, or irrele
 
 The packer supports an untrusted-source-data boundary that explicitly tells downstream model calls to treat retrieved content as evidence, not instructions.
 
-## What was included in this seed
+## What is included as of 0.3.0
 
 - Source/chunk/source-ref/citation/packet/pack types.
-- Text and Markdown chunkers.
-- Pure TypeScript BM25 retriever.
-- Keyword and hybrid retrievers.
-- In-memory and JSON-serializable store.
+- Text and Markdown chunkers with exact offset-based line ranges and per-source-kind overrides (`chunkerByKind`).
+- Pure TypeScript BM25 retriever, keyword retriever, and a reciprocal-rank-fusion hybrid retriever.
+- `Embedder` adapter contract and a cosine-similarity `semanticRetriever`.
+- In-memory and JSON-serializable store with lifecycle operations (`removeSource`, `removeChunks`, `removeMemory`, `getMemory`) and replace-on-re-add semantics.
 - Source diversity and memory signal ranking.
 - Context budgets.
-- Citation-rich packers.
-- Untrusted-source-data packer.
-- Manual memory records and policy hooks.
+- Citation-rich packers with honest diagnostics (`candidateChunks`, `retrievedResults`, `returnedItems`, `excludedItems`).
+- Untrusted-source-data packer with sentinel-forgery hardening and an optional per-call nonce.
+- Opt-in secret redaction and metadata-minimalism packet defaults.
+- Manual memory records with an enforced `manual`/`suggested`/`auto` policy contract, plus real expiry/archival/supersession enforcement at retrieval time.
 - AI Nugget-compatible message/metadata helpers.
 - Policy-driven and query-ranked source selectors.
-- Tests and recipes.
+- Tests, recipes, CI, and runnable examples.
 
 ## Open adapter seams
+
+The `Embedder` adapter contract and a cosine-similarity `semanticRetriever` now ship in core (`src/retrieval/semantic.ts`) — no embedding provider is bundled, so `strategy: 'semantic'` degrades visibly until an app configures one. Concrete embedding providers remain adapter-package territory.
 
 Future optional packages can add:
 
 - `@jxburros/context-nugget/node` for filesystem loaders and persistence helpers.
 - `@jxburros/context-nugget/browser` for IndexedDB/localStorage stores.
-- `@jxburros/context-nugget/embeddings` for embedding provider interfaces and semantic retrievers.
+- `@jxburros/context-nugget/openai-embeddings` (or similar) for concrete embedding provider implementations of the `Embedder` contract.
 - `@jxburros/context-nugget/github` for issues, PRs, commits, README, and repo-file loaders.
 - `@jxburros/context-nugget/ai-nugget` for tighter AI Nugget helpers once this package is independent.
 - `@jxburros/context-nugget/chroma` and `@jxburros/context-nugget/lancedb` for vector store adapters.

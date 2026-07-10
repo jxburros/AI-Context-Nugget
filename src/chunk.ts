@@ -20,28 +20,69 @@ function wordsOf(text: string): string[] {
   return text.trim().split(/\s+/).filter(Boolean);
 }
 
-function chunkWords(words: string[], maxWords: number, overlapWords: number): { text: string; startWord: number; endWord: number }[] {
+interface WordOffset {
+  text: string;
+  index: number;
+}
+
+function wordsWithOffsets(text: string): WordOffset[] {
+  const out: WordOffset[] = [];
+  const re = /\S+/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    out.push({ text: match[0], index: match.index });
+  }
+  return out;
+}
+
+interface WordChunk {
+  text: string;
+  startWord: number;
+  endWord: number;
+  startOffset: number;
+  endOffset: number;
+}
+
+function chunkWords(words: WordOffset[], maxWords: number, overlapWords: number): WordChunk[] {
   if (words.length === 0) return [];
   const safeMax = Math.max(1, maxWords);
   const safeOverlap = Math.max(0, Math.min(overlapWords, safeMax - 1));
-  const out: { text: string; startWord: number; endWord: number }[] = [];
+  const out: WordChunk[] = [];
   let start = 0;
   while (start < words.length) {
     const end = Math.min(words.length, start + safeMax);
-    out.push({ text: words.slice(start, end).join(' '), startWord: start, endWord: end });
+    const slice = words.slice(start, end);
+    const first = slice[0];
+    const last = slice[slice.length - 1];
+    out.push({
+      text: slice.map((w) => w.text).join(' '),
+      startWord: start,
+      endWord: end,
+      startOffset: first?.index ?? 0,
+      endOffset: last ? last.index + last.text.length : 0,
+    });
     if (end >= words.length) break;
     start = end - safeOverlap;
   }
   return out;
 }
 
-function lineRangeForText(fullText: string, chunkText: string, searchStart = 0): { lineStart?: number; lineEnd?: number; nextSearchStart: number } {
-  const idx = fullText.indexOf(chunkText.slice(0, Math.min(80, chunkText.length)), searchStart);
-  if (idx < 0) return { nextSearchStart: searchStart };
-  const before = fullText.slice(0, idx);
-  const lineStart = before.split('\n').length;
-  const lineEnd = lineStart + chunkText.split('\n').length - 1;
-  return { lineStart, lineEnd, nextSearchStart: idx + Math.max(1, chunkText.length) };
+/** Maps character offsets within `content` to 1-based line numbers, via binary search over newline positions. */
+function buildLineIndex(content: string): (offset: number) => number {
+  const newlineOffsets: number[] = [];
+  for (let i = 0; i < content.length; i += 1) {
+    if (content[i] === '\n') newlineOffsets.push(i);
+  }
+  return (offset: number): number => {
+    let lo = 0;
+    let hi = newlineOffsets.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if ((newlineOffsets[mid] ?? Number.POSITIVE_INFINITY) < offset) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo + 1;
+  };
 }
 
 export function textChunker(defaults: TextChunkerOptions = {}): Chunker {
@@ -50,15 +91,15 @@ export function textChunker(defaults: TextChunkerOptions = {}): Chunker {
       const maxWords = options.maxWords ?? defaults.maxWords ?? 400;
       const overlapWords = options.overlapWords ?? defaults.overlapWords ?? 60;
       const layer = options.layer ?? defaults.layer ?? 'documents';
-      const words = wordsOf(source.content);
+      const words = wordsWithOffsets(source.content);
       const chunks = chunkWords(words, maxWords, overlapWords);
-      let searchStart = 0;
+      const lineOf = buildLineIndex(source.content);
       return chunks.map((chunk, index) => {
-        const range = lineRangeForText(source.content, chunk.text, searchStart);
-        searchStart = range.nextSearchStart;
+        const lineStart = lineOf(chunk.startOffset);
+        const lineEnd = lineOf(Math.max(chunk.startOffset, chunk.endOffset - 1));
         return {
-          id: makeId('chunk', `${source.id}:${index}:${chunk.text.slice(0, 120)}`),
-          source: sourceRefFor(source, { lineStart: range.lineStart, lineEnd: range.lineEnd }),
+          id: makeId('chunk', `${source.id}:${index}:${chunk.text.length}:${chunk.text}`),
+          source: sourceRefFor(source, { lineStart, lineEnd }),
           text: chunk.text,
           layer,
           trust: source.trust ?? 'untrusted',
@@ -106,28 +147,62 @@ function parseMarkdownSections(markdown: string): MarkdownSection[] {
   return sections;
 }
 
-function splitSection(section: MarkdownSection, maxWords: number, overlapWords: number): string[] {
-  const text = section.lines.join('\n').trim();
-  if (wordsOf(text).length <= maxWords) return [text];
+interface SectionPiece {
+  text: string;
+  startOffset: number;
+  endOffset: number;
+}
 
-  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  const out: string[] = [];
-  let buffer: string[] = [];
+/** Matches maximal runs of non-blank lines, i.e. paragraphs, tracking each match's offset in `text`. */
+function paragraphsWithOffsets(text: string): WordOffset[] {
+  const out: WordOffset[] = [];
+  const re = /[^\n]+(?:\n[^\n]+)*/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    out.push({ text: match[0], index: match.index });
+  }
+  return out;
+}
+
+/**
+ * Splits section text into model-sized pieces, tracking each piece's character
+ * offset within the untrimmed `sectionRawText` so line ranges stay exact even
+ * when the section starts with blank lines.
+ */
+function splitSectionWithOffsets(sectionRawText: string, maxWords: number, overlapWords: number): SectionPiece[] {
+  if (!sectionRawText.trim()) return [];
+  if (wordsOf(sectionRawText).length <= maxWords) {
+    const trimmed = sectionRawText.trim();
+    const startOffset = sectionRawText.length - sectionRawText.trimStart().length;
+    return [{ text: trimmed, startOffset, endOffset: startOffset + trimmed.length }];
+  }
+
+  const paragraphs = paragraphsWithOffsets(sectionRawText);
+  const out: SectionPiece[] = [];
+  let buffer: WordOffset[] = [];
   let bufferWords = 0;
 
   const flush = () => {
-    if (buffer.length) {
-      out.push(buffer.join('\n\n'));
-      buffer = [];
-      bufferWords = 0;
-    }
+    if (buffer.length === 0) return;
+    const text = buffer.map((p) => p.text).join('\n\n');
+    const first = buffer[0];
+    const last = buffer[buffer.length - 1];
+    if (first && last) out.push({ text, startOffset: first.index, endOffset: last.index + last.text.length });
+    buffer = [];
+    bufferWords = 0;
   };
 
   for (const paragraph of paragraphs) {
-    const count = wordsOf(paragraph).length;
+    const count = wordsOf(paragraph.text).length;
     if (count > maxWords) {
       flush();
-      out.push(...chunkWords(wordsOf(paragraph), maxWords, overlapWords).map((c) => c.text));
+      for (const piece of chunkWords(wordsWithOffsets(paragraph.text), maxWords, overlapWords)) {
+        out.push({
+          text: piece.text,
+          startOffset: paragraph.index + piece.startOffset,
+          endOffset: paragraph.index + piece.endOffset,
+        });
+      }
       continue;
     }
     if (bufferWords + count > maxWords && bufferWords > 0) flush();
@@ -147,23 +222,23 @@ export function markdownChunker(defaults: TextChunkerOptions = {}): Chunker {
       const sections = parseMarkdownSections(source.content);
       const chunks: ContextChunk[] = [];
       for (const section of sections) {
-        const sectionText = section.lines.join('\n').trim();
-        const pieces = splitSection(section, maxWords, overlapWords);
-        let searchStart = 0;
+        const sectionRawText = section.lines.join('\n');
+        const sectionLineOf = buildLineIndex(sectionRawText);
+        const pieces = splitSectionWithOffsets(sectionRawText, maxWords, overlapWords);
         for (const piece of pieces) {
-          const localRange = lineRangeForText(sectionText, piece, searchStart);
-          searchStart = localRange.nextSearchStart;
-          const lineStart = localRange.lineStart ? section.startLine + localRange.lineStart - 1 : section.startLine;
-          const lineEnd = localRange.lineEnd ? section.startLine + localRange.lineEnd - 1 : section.startLine + section.lines.length - 1;
+          const localLineStart = sectionLineOf(piece.startOffset);
+          const localLineEnd = sectionLineOf(Math.max(piece.startOffset, piece.endOffset - 1));
+          const lineStart = section.startLine + localLineStart - 1;
+          const lineEnd = section.startLine + localLineEnd - 1;
           const sectionLabel = section.headingPath.join(' > ') || undefined;
           chunks.push({
-            id: makeId('chunk', `${source.id}:${section.startLine}:${chunks.length}:${piece.slice(0, 160)}`),
+            id: makeId('chunk', `${source.id}:${section.startLine}:${chunks.length}:${piece.text.length}:${piece.text}`),
             source: sourceRefFor(source, { section: sectionLabel, lineStart, lineEnd }),
-            text: piece,
+            text: piece.text,
             layer,
             trust: source.trust ?? 'untrusted',
             metadata: { ...source.metadata, chunkIndex: chunks.length, headingPath: section.headingPath },
-            tokensEstimated: estimateTokens(piece),
+            tokensEstimated: estimateTokens(piece.text),
             createdAt: source.createdAt,
             updatedAt: source.updatedAt,
           });

@@ -10,8 +10,24 @@ import type {
 } from './types.js';
 import { applyContextBudget } from './budget.js';
 import { attachCitations, citationKey, createCitation, formatSourceLabel } from './citations.js';
-import { wrapUntrustedSourceData } from './safety.js';
+import { redactText, wrapUntrustedSourceData } from './safety.js';
 import { estimateTokens, makeId, nowIso, uniqueBy } from './util.js';
+
+export type MetadataPolicy = 'all' | 'minimal' | ((metadata: Record<string, unknown>) => Record<string, unknown>);
+
+/** Chunk metadata keys copied into packet items under the default `'minimal'` metadata policy. */
+const METADATA_ALLOWLIST = ['chunkIndex', 'headingPath', 'memoryId', 'scope', 'tags', 'importance', 'confidence', 'status'] as const;
+
+function applyMetadataPolicy(metadata: Record<string, unknown> | undefined, policy: MetadataPolicy | undefined): Record<string, unknown> {
+  if (!metadata) return {};
+  if (policy === 'all') return { ...metadata };
+  if (typeof policy === 'function') return policy(metadata);
+  const out: Record<string, unknown> = {};
+  for (const key of METADATA_ALLOWLIST) {
+    if (key in metadata) out[key] = metadata[key];
+  }
+  return out;
+}
 
 export interface PacketOptions {
   query: string;
@@ -21,6 +37,15 @@ export interface PacketOptions {
   degraded?: boolean;
   degradedReason?: string;
   diagnosticsReasons?: string[];
+  /** Chunks eligible for retrieval after store/policy filtering, before ranking. */
+  candidateChunks?: number;
+  /**
+   * Controls how much chunk/source metadata is copied into `ContextItem.metadata`.
+   * `'minimal'` (default) copies only a small allowlist of Context-Nugget-owned
+   * fields; `'all'` copies everything (including whatever an app attached to
+   * source metadata); a function lets apps define a custom projection.
+   */
+  metadataPolicy?: MetadataPolicy;
 }
 
 export function packetFromResults(results: RetrievalResult[], options: PacketOptions): ContextPacket {
@@ -35,7 +60,7 @@ export function packetFromResults(results: RetrievalResult[], options: PacketOpt
     trust: result.chunk.trust,
     tokensEstimated: result.chunk.tokensEstimated ?? estimateTokens(result.chunk.text),
     metadata: {
-      ...(result.chunk.metadata ?? {}),
+      ...applyMetadataPolicy(result.chunk.metadata, options.metadataPolicy),
       scoreBreakdown: result.scoreBreakdown,
       reasons: result.reasons,
     },
@@ -58,7 +83,9 @@ export function packetFromResults(results: RetrievalResult[], options: PacketOpt
     visibilitySummary,
     createdAt: nowIso(),
     diagnostics: {
-      searchedChunks: results.length,
+      searchedChunks: options.candidateChunks ?? results.length,
+      candidateChunks: options.candidateChunks ?? results.length,
+      retrievedResults: results.length,
       returnedItems: items.length,
       excludedItems: report.excluded.length,
       estimatedTokens: report.tokensEstimated,
@@ -80,13 +107,16 @@ function itemHeader(item: ContextItem, options: PackOptions): string {
 export function packContext(packet: ContextPacket, options: PackOptions = {}): ContextPack {
   const includeCitations = options.includeCitations ?? true;
   const heading = options.heading ?? 'Relevant context';
+  const redact: ((text: string) => string) | undefined =
+    options.redact === true ? redactText : typeof options.redact === 'function' ? options.redact : undefined;
+  const itemText = (item: ContextItem): string => (redact ? redact(item.text) : item.text).trim();
   const lines: string[] = [];
 
   if (options.format === 'plain') {
     if (heading) lines.push(heading, '');
     for (const item of packet.items) {
       lines.push(itemHeader(item, options));
-      lines.push(item.text.trim());
+      lines.push(itemText(item));
       lines.push('');
     }
   } else {
@@ -95,13 +125,13 @@ export function packContext(packet: ContextPacket, options: PackOptions = {}): C
     for (const item of packet.items) {
       lines.push(`### ${itemHeader(item, options)}`);
       lines.push('');
-      lines.push(item.text.trim());
+      lines.push(itemText(item));
       lines.push('');
     }
   }
 
   let text = lines.join('\n').trim();
-  if (options.trustBoundary === 'untrusted-source-data') text = wrapUntrustedSourceData(text);
+  if (options.trustBoundary === 'untrusted-source-data') text = wrapUntrustedSourceData(text, { nonce: options.trustBoundaryNonce });
   const citations: Citation[] = includeCitations
     ? packet.items.map((item, i) => item.citation ?? createCitation(item.source, i + 1))
     : [];
