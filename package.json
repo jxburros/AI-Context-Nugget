@@ -1,6 +1,6 @@
 {
   "name": "@jxburros/context-nugget",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": false,
   "type": "module",
   "description": "A pliable context and memory scaffolding engine for AI apps.",
@@ -45,6 +45,7 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.d.ts",
+    "nugget",
     "README.md",
     "design.md",
     "CHANGELOG.md",
@@ -56,7 +57,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.mjs",
-    "prepublishOnly": "npm run typecheck && npm run build && npm run test"
+    "build:nugget": "node scripts/build-nugget.mjs",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run test && npm run build:nugget"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",

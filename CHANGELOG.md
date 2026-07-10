@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.0
+
+Closes the packaging/publishing gap identified while integrating this
+package into a downstream app (`Test-App`/Nugget Bench) — no data-lifecycle
+or correctness changes; 0.3.0 already covered those.
+
+### Added
+
+- `hasAiNuggetContext(metadata)` in `src/ai-nugget.ts` — detects whether a
+  chat call's `metadata` (from `asAiNuggetMetadata`) carries packed context,
+  via the stable `contextPacketId` field, instead of pattern-matching the
+  packed system message text (whose headers/fences vary with `PackOptions`
+  and have no stable sentinel of their own).
+- `nugget/` — a generated, vendorable single-folder build (`src/` +
+  `VERSION.txt` stamped with a version + content hash), matching AI Nugget's
+  vendoring convention, for repos that cannot take a package dependency.
+  Built via the new `npm run build:nugget` script.
+- `dist/` is now committed (previously gitignored and only produced by a
+  local `npm run build`) so consuming this repo directly — not via the npm
+  package — no longer requires a manual build step first.
+- `.github/workflows/publish.yml` — publishes to npmjs.org and GitHub
+  Packages on `release: published`, mirroring AI Nugget's release workflow.
+  This was the actual blocker to a first publish; the package has been
+  correctness-ready since 0.3.0.
+- CI: `nugget-drift` job (fails if committed `dist/`/`nugget/` is stale) and
+  a `build:nugget` step in the `test` job.
+- Tests for the AI Nugget bridge (`tests/ai-nugget-bridge.test.mjs`) — this
+  module had no test coverage before.
+
+### Changed
+
+- `ContextPacket.items` gained a doc comment clarifying the field name
+  (`items`, not `results` — that convention lives one layer down, in
+  `RetrievalResult[]`). Caught by a downstream integrator guessing wrong on
+  first use; no runtime change.
+- README: added a vendoring subsection (mirroring AI Nugget's) and bridge
+  guidance to use `hasAiNuggetContext` instead of text-matching.
+- `docs/release-checklist.md` updated now that a CI-driven `publish.yml`
+  exists — the checklist previously described a manual/local `npm publish`
+  as the only path.
+
 ## 0.3.0
 
 First publishable release. Implements the fixes and hardening from `docs/audit-2026-07-10.md` / `docs/implementation-plan.md`. The package was never published before this version, so these are listed as breaking changes relative to the `0.1.0` seed rather than as a deprecation cycle.

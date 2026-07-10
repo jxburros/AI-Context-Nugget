@@ -20,7 +20,27 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      - run: npm run build:nugget
       - run: npm pack --dry-run
+
+  nugget-drift:
+    name: Nugget is up to date with src
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build && npm run build:nugget
+      - name: Fail if committed dist/ or nugget/ is stale
+        run: |
+          if [ -n "$(git status --porcelain dist nugget)" ]; then
+            echo "::error::dist/ or nugget/ is out of date. Run 'npm run build && npm run build:nugget' and commit the result."
+            git --no-pager diff --stat dist nugget
+            exit 1
+          fi
 
   examples:
     # Examples run via `node --experimental-strip-types`, which needs Node 22.6+;

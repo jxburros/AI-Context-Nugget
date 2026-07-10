@@ -65,6 +65,28 @@ console.log(context.citations);
 
 `engine.addSource(source)` is idempotent by `source.id`: calling it again with updated content replaces the previously indexed chunks rather than leaving stale chunks retrievable alongside the new ones. Use `engine.removeSource(id)` to remove a source and its chunks entirely.
 
+Repos that cannot take a package dependency can vendor the generated
+`nugget/` folder instead (see below).
+
+### Vendoring without a package dependency
+
+`dist/` (ESM + `.d.ts`, under `dist/src/`) is this package's own build
+output, generated from `src/` via `tsc`. `nugget/` is a generated
+single-folder build (`src/` + `VERSION.txt` stamped with a version + content
+hash) for repos that cannot take a package dependency — copy it in;
+`VERSION.txt` makes drift from the source of truth detectable. Both are
+committed and regenerated from `src/`; `prepublishOnly` rebuilds both, and CI
+(`nugget-drift` job) fails if either is stale.
+
+`nugget/src/*.ts` uses NodeNext-style relative imports with explicit `.js`
+extensions (e.g. `export * from './types.js'`), matching `moduleResolution:
+NodeNext`. If your bundler's runtime module graph doesn't treat `.ts`/`.js`
+as interchangeable the way `tsc` does (see AI Nugget's README for a
+Turbopack example of this failure mode), vendor `dist/` instead and point
+path aliases at its `.js` entry points (`dist/src/index.js`,
+`dist/src/ai-nugget.js`) — TypeScript picks up the sibling `.d.ts`
+automatically.
+
 ## AI Nugget bridge
 
 Context Nugget does not call models. The bridge returns plain objects compatible with AI Nugget-style message arrays and metadata.
@@ -79,6 +101,28 @@ const messages = [
 ];
 
 const metadata = asAiNuggetMetadata(context);
+```
+
+Pass `metadata` through to `AIHandler.chat`/`.stream` as the call's
+`metadata` (AI Nugget echoes it back on telemetry/`CallInfo`). To later check
+whether a given call actually carried packed context — from a telemetry
+record, a log line, anything downstream of the call — use
+`hasAiNuggetContext(metadata)` rather than pattern-matching the packed system
+message text: the packed text's headers and trust-boundary fences change
+shape with `PackOptions`, so it has no stable sentinel of its own, while
+`contextPacketId` (which `hasAiNuggetContext` checks for) is always present
+when context was injected.
+
+```ts
+import { hasAiNuggetContext } from '@jxburros/context-nugget/ai-nugget';
+
+telemetry: {
+  record(callRecord) {
+    if (hasAiNuggetContext(callRecord.metadata)) {
+      // this call was grounded in packed, cited context
+    }
+  },
+},
 ```
 
 ## Memory: lifecycle and policy
