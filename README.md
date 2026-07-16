@@ -239,3 +239,5 @@ This seed intentionally borrows proven patterns from the surrounding portfolio:
 - **AI Nugget:** provider communication remains separate.
 
 See `design.md`, `docs/security-model.md`, and `recipes/` for details.
+
+<!-- GitHub Pages deployment is configured in .github/workflows/pages.yml. -->
