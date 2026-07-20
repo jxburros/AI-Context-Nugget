@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Added repo-specific QA instructions for the package contract, generated
+  artifact drift, security invariants, examples, and honest browser/live-check
+  applicability.
+
 ## 0.4.0
 
 Closes the packaging/publishing gap identified while integrating this
