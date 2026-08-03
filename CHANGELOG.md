@@ -127,8 +127,6 @@ QA-generated issues.
 
 ## 0.4.0
 
-## 0.4.0
-
 Closes the packaging/publishing gap identified while integrating this
 package into a downstream app (`Test-App`/Nugget Bench) — no data-lifecycle
 or correctness changes; 0.3.0 already covered those.
