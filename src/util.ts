@@ -48,7 +48,7 @@ export function metadataMatches(metadata: Record<string, unknown> | undefined, f
       if (!expected.includes(actual)) return false;
       continue;
     }
-    if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
+    if (expected && typeof expected === 'object') {
       const expectedRecord = expected as { in?: unknown[]; exists?: boolean };
       if (expectedRecord.in && !expectedRecord.in.includes(actual)) return false;
       if (typeof expectedRecord.exists === 'boolean') {

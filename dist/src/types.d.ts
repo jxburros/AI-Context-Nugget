@@ -192,6 +192,7 @@ export interface ContextDiagnostics {
     /** Results returned by the retriever (post-topK), before budget enforcement. */
     retrievedResults: number;
     returnedItems: number;
+    /** Candidates dropped before packing — budget exclusions plus upstream policy filtering. Matches `ContextPacket.exclusions.length`. */
     excludedItems?: number;
     /** Estimated tokens of the packed context, including packing overhead (see `overheadTokens`). */
     estimatedTokens: number;

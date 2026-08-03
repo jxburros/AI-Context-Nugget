@@ -11,8 +11,8 @@ jobs:
       matrix:
         node-version: ['20.x', '22.x']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
@@ -23,12 +23,36 @@ jobs:
       - run: npm run build:nugget
       - run: npm pack --dry-run
 
+  lint:
+    name: Markdown and secret scan
+    runs-on: ubuntu-latest
+    env:
+      # Pinned so a new upstream rule/rule-set cannot turn CI red on an
+      # unrelated commit; bump deliberately.
+      MARKDOWNLINT_VERSION: '0.23.2'
+      GITLEAKS_VERSION: '8.30.0'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22.x'
+      - name: Verify README release section
+        run: npm run verify:readme
+      - name: Lint markdown
+        run: npx --yes "markdownlint-cli2@${MARKDOWNLINT_VERSION}"
+      - name: Secret scan
+        run: |
+          # Extracted outside the workspace so the binary is not itself scanned.
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" dir . --config .gitleaks.toml --redact --no-banner --exit-code 1
+
   nugget-drift:
     name: Nugget is up to date with src
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22.x'
           cache: 'npm'
@@ -48,8 +72,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22.x'
           cache: 'npm'

@@ -1,3 +1,4 @@
+import { isHiddenFromAI } from '../safety.js';
 import { metadataMatches, nowIso } from '../util.js';
 /**
  * True when the record is retrievable at the reference time: status is
@@ -63,7 +64,7 @@ export class InMemoryContextStore {
         return [...this.sources.values()];
     }
     listChunks(query) {
-        const sourceVisibility = new Map([...this.sources.values()].map((s) => [s.id, s.metadata?.hideFromAI !== true]));
+        const sourceVisibility = new Map([...this.sources.values()].map((s) => [s.id, !isHiddenFromAI(s)]));
         return [...this.chunks.values()].filter((chunk) => {
             if (sourceVisibility.get(chunk.source.sourceId) === false)
                 return false;
@@ -124,6 +125,7 @@ export class InMemoryContextStore {
         this.memories.clear();
     }
 }
+/** @deprecated Pass-through for `store.export()`; call that directly instead. */
 export function jsonStoreSnapshot(store) {
     return store.export();
 }

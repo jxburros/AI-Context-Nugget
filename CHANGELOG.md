@@ -2,6 +2,75 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.5.1
+
+A correctness and release-readiness pass over the 0.5.0 tree: one honesty fix
+in packed output, one diagnostics fix, and the packaging/CI/lint gaps that
+made the repo not actually tag-ready.
+
+### Fixed
+
+- **A packet with no items now packs to empty text.** `packContext` previously
+  emitted a bare `## Relevant context` heading (and, with
+  `trustBoundary: 'untrusted-source-data'`, an untrusted-source fence wrapped
+  around that heading) for an empty packet, announcing context to the model
+  that did not exist. As a result `asAiNuggetContextMessages` returned a
+  content-free system message instead of no messages, contradicting its
+  documented contract. `pack.citations` is `[]` and `pack.tokensEstimated` is
+  `0` for such packs; the degraded/diagnostic story stays on the packet.
+- `diagnostics.excludedItems` counts memory-policy drops alongside budget
+  drops, so it matches `packet.exclusions.length` instead of silently
+  under-reporting policy-filtered candidates.
+- `package.json` `files` ships `docs/security-model.md`. Both `README.md` and
+  `design.md` link to it and both are published, so the reference was dead in
+  the npm tarball.
+- `.markdownlint-cli2.jsonc` declares `globs`. Without it a bare
+  `markdownlint-cli2` matched no files and reported a vacuous
+  "0 issues in 0 files"; it now lints the 17 live markdown files.
+- `.markdownlint-cli2.jsonc` ignores `**/node_modules/**` rather than
+  `node_modules/**`. Once the examples are installed, each
+  `examples/*/node_modules/@jxburros/context-nugget` is a `file:../..` symlink
+  back to the repo root, so the top-level-only ignore let the linter recurse
+  into the repo through itself and hang indefinitely.
+
+### Added
+
+- `SKILL.md` — a task-shaped integration guide for coding agents: minimum
+  viable wiring, the contracts that are easy to get wrong (empty packets,
+  `trust` vs `authorityClass`, memory never auto-writing, visibly degraded
+  retrieval, budgets counting packing overhead, nonce validation), determinism
+  rules, a decision table for chunker/retriever/store/memory-mode, and a
+  verification checklist. It ships in the package, so an agent in a consuming
+  repo can read it from `node_modules/@jxburros/context-nugget/SKILL.md`.
+- A standing `## Current release — X.Y.Z` section at the bottom of `README.md`
+  naming the current version and what changed since the previous one, plus
+  `npm run verify:readme` (`scripts/verify-readme-version.mjs`) to enforce it.
+  The check fails if the heading drifts from `package.json`, if the section is
+  no longer last, or if it does not say what changed; it runs in the CI `lint`
+  job and in `prepublishOnly`.
+- CI `lint` job (markdownlint + gitleaks, both version-pinned).
+  `.markdownlint-cli2.jsonc` and `.gitleaks.toml` had existed since 0.5.0 but
+  nothing ever ran them, so neither config was enforced on any commit.
+
+### Changed
+
+- Docs refreshed against the 0.5.1 tree: `design.md`'s included-features list,
+  `docs/security-model.md` (packed output no longer overstates itself),
+  `docs/release-checklist.md` (lint job, shipped `docs/security-model.md`), the
+  README's CI description, and `.ai/qa.md` — the QA profile predated the 0.5.0
+  feature set and never mentioned the manifest, `authorityClass`, bitemporal or
+  governed memory, determinism pinning, or the repo hygiene gates.
+- CI/publish/Pages workflows use `actions/checkout@v5` and
+  `actions/setup-node@v5`; the `@v4` pins target the deprecated Node 20 runner
+  and were being force-migrated with a warning on every run.
+- `.gitignore` covers `*.tgz` and `_site/` so a local `npm pack`
+  (release-checklist step 3) or Pages build no longer pollutes the
+  `git status --porcelain` drift checks.
+- Internal de-duplication, no behavior change: `InMemoryContextStore` uses
+  `isHiddenFromAI`, the chunkers use `trustForSource`, `metadataMatches` drops
+  a dead `Array.isArray` re-check, and `jsonStoreSnapshot` is marked
+  `@deprecated` (it is a pass-through for `store.export()`).
+
 ## 0.5.0
 
 Implements the highest-value recommendations from the AI context systems
@@ -100,7 +169,9 @@ QA-generated issues.
   `MyBearer ...`) are no longer false positives.
 - `wrapUntrustedSourceData` validates the nonce against `[A-Za-z0-9_-]+` and
   throws on anything that would make the fence ambiguous.
-- `npm test` uses a shell-independent glob (`node --test "tests/*.test.mjs"`).
+- `npm test` uses argument-less `node --test` (shell-independent, and Node 20's
+  test runner does not expand glob arguments); discovery still resolves to
+  `tests/*.test.mjs`.
 - `package.json` `files` now ships `dist/**/*.js.map`, fixing broken
   `sourceMappingURL` references in the published tarball; `package-lock.json`
   version drift (0.1.0) fixed.

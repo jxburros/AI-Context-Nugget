@@ -131,3 +131,18 @@ test('manual strategy short-circuits to an empty manual packet instead of degrad
   assert.notEqual(packet.degraded, true);
   assert.ok(packet.diagnostics.reasons.some((r) => r.includes('manual strategy')));
 });
+
+test('excludedItems counts policy drops as well as budget drops', async () => {
+  const engine = new ContextEngine({
+    memoryPolicy: { mode: 'manual', shouldRetrieve: (record) => record.id !== 'mem-blocked' },
+  });
+  await engine.addMemory(makeMemoryRecord({ id: 'mem-blocked', text: 'alpha beta blocked by policy' }));
+  await engine.addMemory(makeMemoryRecord({ id: 'mem-a', text: 'alpha beta first kept memory' }));
+  await engine.addMemory(makeMemoryRecord({ id: 'mem-b', text: 'alpha beta second kept memory' }));
+  const packet = await engine.retrieve({ query: 'alpha beta', layers: ['user'], budget: { maxItems: 1 } });
+  const exclusions = packet.exclusions ?? [];
+  assert.equal(exclusions.length, 2);
+  assert.ok(exclusions.some((e) => e.reasons.includes('policy-filtered')));
+  assert.ok(exclusions.some((e) => e.reasons.includes('max-items')));
+  assert.equal(packet.diagnostics?.excludedItems, exclusions.length);
+});

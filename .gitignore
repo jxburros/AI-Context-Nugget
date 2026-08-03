@@ -1,2 +1,8 @@
 node_modules/
 *.tsbuildinfo
+
+# `npm pack` output (release-checklist step 3) and the GitHub Pages build dir —
+# both are generated locally and would otherwise turn up in the
+# `git status --porcelain` drift checks.
+*.tgz
+_site/

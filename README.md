@@ -59,7 +59,7 @@ import {
 - AI Nugget bridge helpers that produce compatible message and metadata objects without importing AI Nugget.
 - Source selection helpers for policy-driven context and query-ranked source selection.
 - Tests (see `tests/`) and recipes for document Q&A, layered memory, untrusted repo review, GitHub issue context, workspace context, card knowledge, and spec-driven context.
-- CI on Node 20.x/22.x (`.github/workflows/ci.yml`), including a job that installs and runs each example against the built package.
+- CI on Node 20.x/22.x (`.github/workflows/ci.yml`): typecheck/build/test/pack, a generated-artifact drift gate for `dist/` and `nugget/`, a markdownlint + gitleaks lint gate, and a job that installs and runs each example against the built package.
 
 ## Install / use
 
@@ -227,6 +227,8 @@ const pack = packContext(packet, {
 });
 ```
 
+A packet with no items packs to empty `text` (no heading, no trust fence, no citations), so injecting `pack.text` — or `asAiNuggetContextMessages(pack)` — never announces context that does not exist. Whether retrieval degraded, and why nothing was included, stays on `packet.degraded`/`packet.diagnostics`.
+
 The packet answers the questions the app and user will eventually care about: what was searched (`diagnostics.candidateChunks`), what the retriever returned before budgeting (`diagnostics.retrievedResults`), what was actually included/excluded, which sources were used, whether retrieval degraded, how much budget was used, and what text the model would see.
 
 ## Trust boundary and redaction
@@ -272,5 +274,49 @@ This seed intentionally borrows proven patterns from the surrounding portfolio:
 - **AI Nugget:** provider communication remains separate.
 
 See `design.md`, `docs/security-model.md`, and `recipes/` for details.
+
+## For AI agents
+
+`SKILL.md` in this repository is a task-shaped integration guide for coding
+agents: the minimum viable wiring, the contracts that are easy to get wrong
+(empty packets, `trust` vs `authorityClass`, memory never auto-writing, visible
+degraded mode, budgets counting packing overhead), determinism rules, and a
+verification checklist. It ships in the npm package, so an agent working in a
+consuming repo can read it from `node_modules/@jxburros/context-nugget/SKILL.md`.
+
+<!--
+  Current release: keep this section last, and update it in the same commit as
+  every version bump (docs/release-checklist.md step 1). `npm run verify:readme`
+  fails if its version heading drifts from package.json.
+-->
+## Current release — 0.5.1
+
+A correctness and release-readiness pass over 0.5.0. No API was added or
+removed; one rendered-output behavior changed.
+
+Changed since 0.5.0:
+
+- **A packet with no items now packs to empty text.** Previously an empty packet
+  still rendered a bare `## Relevant context` heading — and, with
+  `trustBoundary: 'untrusted-source-data'`, an untrusted-source fence wrapped
+  around that heading — announcing context to the model that did not exist.
+  `pack.citations` is now `[]` and `pack.tokensEstimated` is `0` for such packs,
+  and `asAiNuggetContextMessages` correctly returns no messages. If your app
+  branches on `pack.text` being non-empty that branch now behaves correctly; if
+  it assumed a heading was always present, update it.
+- `diagnostics.excludedItems` counts memory-policy drops alongside budget drops,
+  so it matches `packet.exclusions.length` instead of under-reporting.
+- The published tarball now includes `docs/security-model.md` (linked from this
+  README and from `design.md`, previously a dead reference) and `SKILL.md`.
+- CI gained a `lint` job that actually runs the markdownlint and gitleaks
+  configs — both shipped in 0.5.0 but were never executed. Fixed a
+  `.markdownlint-cli2.jsonc` ignore pattern that let the linter recurse into the
+  repo through the examples' `file:../..` symlinks and hang.
+- Workflows moved to `actions/checkout@v5` / `actions/setup-node@v5`; docs
+  (`design.md`, `docs/security-model.md`, `docs/release-checklist.md`,
+  `.ai/qa.md`) refreshed against the code, including a determinism claim that
+  had been overstated.
+
+Full history: `CHANGELOG.md`.
 
 <!-- GitHub Pages deployment is configured in .github/workflows/pages.yml. -->

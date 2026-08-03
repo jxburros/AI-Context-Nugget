@@ -47,7 +47,7 @@ export function metadataMatches(metadata, filters) {
                 return false;
             continue;
         }
-        if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
+        if (expected && typeof expected === 'object') {
             const expectedRecord = expected;
             if (expectedRecord.in && !expectedRecord.in.includes(actual))
                 return false;

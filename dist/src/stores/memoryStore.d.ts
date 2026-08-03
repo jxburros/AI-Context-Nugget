@@ -26,6 +26,7 @@ export declare class InMemoryContextStore implements ContextStore {
     import(snapshot: StoreSnapshot): void;
     clear(): void;
 }
+/** @deprecated Pass-through for `store.export()`; call that directly instead. */
 export declare function jsonStoreSnapshot(store: ContextStore): StoreSnapshot | Promise<StoreSnapshot>;
 export declare function snapshotToJson(snapshot: StoreSnapshot): string;
 export declare function snapshotFromJson(json: string): StoreSnapshot;

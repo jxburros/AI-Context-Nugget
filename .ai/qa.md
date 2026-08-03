@@ -27,14 +27,50 @@ Any output means `dist/` or `nugget/` must be reviewed and committed with the
 source change. Run the examples job when public exports, packaging, recipes, or
 bridge helpers change.
 
+Repo hygiene gates, also enforced by the `lint` CI job — keep them passing
+locally before pushing:
+
+```bash
+npm run verify:readme
+npx markdownlint-cli2
+gitleaks dir . --config .gitleaks.toml --redact --no-banner --exit-code 1
+```
+
+`verify:readme` enforces the standing convention that `README.md` ends with a
+`## Current release — X.Y.Z` section naming the current `package.json` version
+and summarizing what changed since the previous release.
+
 ## Invariants
 
 - Keep retrieval, ranking, budgeting, and stable identifiers deterministic.
+  `RankOptions.now` and `RetrievalQuery.asOf` exist so time-dependent behavior
+  can be pinned in tests; do not add hidden `Date.now()` or randomness to the
+  retrieval or packing path.
 - Preserve exact citations, source references, trust metadata, and diagnostics.
+  Diagnostics must stay honest: `candidateChunks`, `retrievedResults`,
+  `returnedItems`, and `excludedItems` measure distinct things, `excludedItems`
+  matches `packet.exclusions.length`, and `estimatedTokens` counts packing
+  overhead instead of under-reporting what actually ships.
+- Every pack carries a verifiable `ContextManifest` unless the caller opts out.
+  `packageHash` stays deterministic — it covers the selection (query, layers,
+  retrieval mode, requested budget, and each item's identity, order, and
+  content hash) and must never absorb time, scores, or diagnostics.
+  `verifyManifest` is the contract test for this.
+- Keep `trust` and `authorityClass` separate. `trust` drives fencing and
+  labeling of retrieved text; `authorityClass` records what authority the
+  content carries for audit and precedence. Do not collapse them.
 - Never allow retrieved content to escape the untrusted-source boundary.
+  Sentinel-like lines inside wrapped content stay neutralized, and an invalid
+  `trustBoundaryNonce` throws rather than emitting a weakened fence.
+- Packed output must not overstate itself: a packet with no items packs to
+  empty text, no citations, and no trust fence.
 - Keep memory lifecycle decisions visible, scoped, reversible, and testable.
-- Do not add model-provider calls, secret storage, document parsing, or sync to
-  this package; those remain app-owned concerns.
+  Expired, archived, superseded, proposed, and disputed records stay out of
+  retrieval — enforced at the store, not only in `listMemories`. The
+  `manual` / `suggested` / `auto` policy contract is behavioral, not advisory.
+- Do not add model-provider calls, secret storage, document parsing, network
+  access, or sync to this package; those remain app-owned concerns, and the
+  runtime stays dependency-free.
 - Keep the AI Nugget bridge dependency-free and limited to compatible data.
 
 ## Browser and live checks
