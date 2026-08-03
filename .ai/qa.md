@@ -31,9 +31,14 @@ Repo hygiene gates, also enforced by the `lint` CI job — keep them passing
 locally before pushing:
 
 ```bash
+npm run verify:readme
 npx markdownlint-cli2
 gitleaks dir . --config .gitleaks.toml --redact --no-banner --exit-code 1
 ```
+
+`verify:readme` enforces the standing convention that `README.md` ends with a
+`## Current release — X.Y.Z` section naming the current `package.json` version
+and summarizing what changed since the previous release.
 
 ## Invariants
 

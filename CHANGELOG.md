@@ -35,6 +35,19 @@ made the repo not actually tag-ready.
 
 ### Added
 
+- `SKILL.md` — a task-shaped integration guide for coding agents: minimum
+  viable wiring, the contracts that are easy to get wrong (empty packets,
+  `trust` vs `authorityClass`, memory never auto-writing, visibly degraded
+  retrieval, budgets counting packing overhead, nonce validation), determinism
+  rules, a decision table for chunker/retriever/store/memory-mode, and a
+  verification checklist. It ships in the package, so an agent in a consuming
+  repo can read it from `node_modules/@jxburros/context-nugget/SKILL.md`.
+- A standing `## Current release — X.Y.Z` section at the bottom of `README.md`
+  naming the current version and what changed since the previous one, plus
+  `npm run verify:readme` (`scripts/verify-readme-version.mjs`) to enforce it.
+  The check fails if the heading drifts from `package.json`, if the section is
+  no longer last, or if it does not say what changed; it runs in the CI `lint`
+  job and in `prepublishOnly`.
 - CI `lint` job (markdownlint + gitleaks, both version-pinned).
   `.markdownlint-cli2.jsonc` and `.gitleaks.toml` had existed since 0.5.0 but
   nothing ever ran them, so neither config was enforced on any commit.
