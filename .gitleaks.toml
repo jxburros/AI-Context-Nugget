@@ -1,0 +1,14 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentional fake fixtures: redaction test vectors and audit documentation examples"
+paths = [
+  '''tests/safety\.test\.mjs''',
+  '''Context Nugget Audit\.md''',
+  '''src/safety\.ts''',
+  '''nugget/src/safety\.ts''',
+  '''dist/src/safety\.js''',
+]
