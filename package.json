@@ -57,7 +57,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build",
-    "test": "node --test \"tests/*.test.mjs\"",
+    "test": "node --test",
     "build:nugget": "node scripts/build-nugget.mjs",
     "prepublishOnly": "npm run typecheck && npm run build && npm run test && npm run build:nugget"
   },
