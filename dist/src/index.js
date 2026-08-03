@@ -8,6 +8,7 @@ export * from './retrieval/keyword.js';
 export * from './retrieval/hybrid.js';
 export * from './retrieval/semantic.js';
 export * from './budget.js';
+export * from './manifest.js';
 export * from './rank.js';
 export * from './citations.js';
 export * from './safety.js';

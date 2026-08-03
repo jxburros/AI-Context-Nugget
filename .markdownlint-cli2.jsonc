@@ -1,0 +1,23 @@
+{
+  // Repo-wide markdownlint config. Long lines are fine in prose/tables;
+  // Keep-a-Changelog repeats section headings per release.
+  "config": {
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    // The security docs quote the literal `[neutralized] ` prefix — its
+    // trailing space is meaningful, not a typo.
+    "MD038": false,
+    // Historical audit docs use compact table pipes throughout.
+    "MD060": false
+  },
+  "ignores": [
+    "node_modules/**",
+    "dist/**",
+    "nugget/**",
+    // Frozen historical/imported records (see their banners) — not reformatted.
+    "AI_Context_Systems_Deep_Research_Report.md",
+    "Context Nugget Audit.md",
+    "docs/audit-2026-07-10.md",
+    "docs/implementation-plan.md"
+  ]
+}

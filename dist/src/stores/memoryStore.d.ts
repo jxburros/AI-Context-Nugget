@@ -1,5 +1,13 @@
 import type { ChunkFilter, ContextChunk, ContextSource, ContextStore, MemoryRecord, RetrievalQuery, StoreSnapshot } from '../types.js';
-export declare function recordIsActive(record: MemoryRecord): boolean;
+/**
+ * True when the record is retrievable at the reference time: status is
+ * `'active'` and the reference instant falls inside its `expiresAt` /
+ * `validFrom` / `validTo` windows. `options.asOf` (ISO) sets the reference
+ * time for bitemporal queries; it defaults to now.
+ */
+export declare function recordIsActive(record: MemoryRecord, options?: {
+    asOf?: string;
+}): boolean;
 export declare class InMemoryContextStore implements ContextStore {
     private readonly sources;
     private readonly chunks;

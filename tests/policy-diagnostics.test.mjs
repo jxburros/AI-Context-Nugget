@@ -84,3 +84,50 @@ test('memory mode dispatch: auto with hook defers to hook', async () => {
   assert.equal(decision.store, false);
   assert.equal(decision.reason, 'app said no');
 });
+
+test('metadata allowlist: intended fields survive packing, app metadata does not (default policy)', async () => {
+  const engine = new ContextEngine({ chunkerOptions: { maxWords: 20, overlapWords: 0 } });
+  await engine.addSource({
+    id: 'doc-meta',
+    kind: 'text',
+    title: 'Doc',
+    content: 'alpha beta gamma delta epsilon zeta eta theta iota kappa',
+    metadata: { internalCustomerId: 'cust-42', path: 'notes.txt' },
+  });
+  const packet = await engine.retrieve({ query: 'alpha beta', budget: { maxItems: 1 } });
+  const item = packet.items[0];
+  assert.ok(item, 'one item packed');
+  assert.equal(item.metadata.internalCustomerId, undefined, 'app metadata stays out by default');
+  assert.equal(typeof item.metadata.chunkIndex, 'number');
+  assert.equal(typeof item.metadata.startWord, 'number', 'text-chunk word offsets survive the allowlist');
+  assert.equal(typeof item.metadata.endWord, 'number');
+});
+
+test('metadataPolicy threads through engine options and per-call override', async () => {
+  const engine = new ContextEngine({ metadataPolicy: 'all' });
+  await engine.addSource({
+    id: 'doc-meta-2',
+    kind: 'text',
+    title: 'Doc',
+    content: 'lorem ipsum dolor sit amet',
+    metadata: { appField: 'visible' },
+  });
+  const allPacket = await engine.retrieve({ query: 'lorem ipsum' });
+  assert.equal(allPacket.items[0].metadata.appField, 'visible', 'engine-level policy applies');
+
+  const minimalPacket = await engine.retrieve({ query: 'lorem ipsum' }, { metadataPolicy: 'minimal' });
+  assert.equal(minimalPacket.items[0].metadata.appField, undefined, 'per-call policy wins');
+
+  const projected = await engine.retrieve({ query: 'lorem ipsum' }, { metadataPolicy: (m) => ({ only: m.appField }) });
+  assert.equal(projected.items[0].metadata.only, 'visible', 'function policy supported');
+});
+
+test('manual strategy short-circuits to an empty manual packet instead of degrading', async () => {
+  const engine = new ContextEngine();
+  await engine.addSource({ id: 'doc-m', kind: 'text', title: 'Doc', content: 'manual retrieval content here' });
+  const packet = await engine.retrieve({ query: 'manual retrieval', strategy: 'manual' });
+  assert.equal(packet.retrievalMode, 'manual');
+  assert.equal(packet.items.length, 0);
+  assert.notEqual(packet.degraded, true);
+  assert.ok(packet.diagnostics.reasons.some((r) => r.includes('manual strategy')));
+});

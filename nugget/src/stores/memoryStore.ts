@@ -1,9 +1,19 @@
 import type { ChunkFilter, ContextChunk, ContextSource, ContextStore, MemoryRecord, RetrievalQuery, StoreSnapshot } from '../types.js';
 import { metadataMatches, nowIso } from '../util.js';
 
-export function recordIsActive(record: MemoryRecord): boolean {
+/**
+ * True when the record is retrievable at the reference time: status is
+ * `'active'` and the reference instant falls inside its `expiresAt` /
+ * `validFrom` / `validTo` windows. `options.asOf` (ISO) sets the reference
+ * time for bitemporal queries; it defaults to now.
+ */
+export function recordIsActive(record: MemoryRecord, options: { asOf?: string } = {}): boolean {
+  const parsed = options.asOf ? Date.parse(options.asOf) : Number.NaN;
+  const refMs = Number.isNaN(parsed) ? Date.now() : parsed;
   if ((record.status ?? 'active') !== 'active') return false;
-  if (record.expiresAt && Date.parse(record.expiresAt) <= Date.now()) return false;
+  if (record.expiresAt && Date.parse(record.expiresAt) <= refMs) return false;
+  if (record.validFrom && Date.parse(record.validFrom) > refMs) return false;
+  if (record.validTo && Date.parse(record.validTo) <= refMs) return false;
   return true;
 }
 
@@ -16,7 +26,13 @@ function chunkMatchesQuery(chunk: ContextChunk, query?: RetrievalQuery): boolean
 
 function memoryMatchesQuery(record: MemoryRecord, query?: RetrievalQuery): boolean {
   if (!query) return recordIsActive(record);
-  if (!recordIsActive(record)) return false;
+  if (query.memoryStatuses) {
+    // Explicit status list = management view (e.g. an approval inbox listing
+    // proposed/disputed records); validity windows are not applied.
+    if (!query.memoryStatuses.includes(record.status ?? 'active')) return false;
+  } else if (!recordIsActive(record, { asOf: query.asOf })) {
+    return false;
+  }
   if (query.layers?.length && !query.layers.includes(record.layer)) return false;
   if (query.scope && record.scope !== query.scope) return false;
   return metadataMatches(record.metadata, query.filters);
@@ -50,7 +66,7 @@ export class InMemoryContextStore implements ContextStore {
       const memoryId = chunk.metadata?.memoryId;
       if (typeof memoryId === 'string') {
         const record = this.memories.get(memoryId);
-        if (!record || !recordIsActive(record)) return false;
+        if (!record || !recordIsActive(record, { asOf: query?.asOf })) return false;
       }
       return chunkMatchesQuery(chunk, query);
     });

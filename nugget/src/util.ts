@@ -67,15 +67,15 @@ export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-export function daysSince(iso?: string): number | null {
+export function daysSince(iso?: string, nowMs = Date.now()): number | null {
   if (!iso) return null;
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return null;
-  return Math.max(0, (Date.now() - ms) / 86_400_000);
+  return Math.max(0, (nowMs - ms) / 86_400_000);
 }
 
-export function recencyBoost(iso?: string, halfLifeDays = 30): number {
-  const days = daysSince(iso);
+export function recencyBoost(iso?: string, halfLifeDays = 30, nowMs = Date.now()): number {
+  const days = daysSince(iso, nowMs);
   if (days === null) return 0;
   return Math.exp(-days / halfLifeDays);
 }

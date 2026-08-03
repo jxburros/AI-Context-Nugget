@@ -2,13 +2,128 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.5.0
+
+Implements the highest-value recommendations from the AI context systems
+research report (auditability, honest budgets, governed memory), closes every
+open item from the 2026-07-10 root audit punch list, and resolves all open
+QA-generated issues.
+
+### Added
+
+- **Context manifest** (`src/manifest.ts`): every `packContext` call now
+  attaches a versioned, serializable `ContextManifest` (`pack.manifest`,
+  disable with `PackOptions.includeManifest: false`) recording each included
+  item's locator, trust/authority class, scores, selection reasons, token
+  estimate, and content hash; every excluded candidate with machine-readable
+  reasons; and the budget actually spent. `packageHash` is deterministic
+  (covers the selection, excludes time/scores) so two runs selecting the same
+  content in the same order hash identically — `buildManifest`,
+  `manifestHash`, `verifyManifest`, and `canonicalJson` are exported.
+- `AuthorityClass` — a typed authority field on sources, chunks, and items
+  (`application_policy`, `project_instruction`, `user_instruction`,
+  `tool_result`, `derived_content`, `agent_claim`, `untrusted_content`),
+  deliberately independent of `trust`. Chunkers derive it via
+  `defaultAuthorityClass(source)`; memory chunks are `derived_content`.
+- Structured exclusion reporting: `applyContextBudget` returns `exclusions`
+  (with reasons `max-items`, `per-source-cap`, `max-chars`, `max-tokens`,
+  `no-token-budget`) and report-level `reasons` (e.g. when `reserveTokens`
+  consumes the whole budget); packets expose `packet.exclusions` including
+  memory-policy drops (`policy-filtered`); diagnostics gain `overheadTokens`.
+- Bitemporal memory: optional `validFrom`/`validTo`/`observedAt`/`reviewAt`
+  on `MemoryRecord`, an `asOf` reference time on `RetrievalQuery` (applied at
+  the store via `recordIsActive(record, { asOf })`), and `isDueForReview`.
+- Governed memory write path: `MemoryStatus` gains `'proposed'` and
+  `'disputed'` (both excluded from retrieval); `engine.proposeMemory`,
+  `engine.approveMemory`, and `engine.disputeMemory` implement
+  propose -> approve/dispute; `RetrievalQuery.memoryStatuses` lets approval
+  UIs list non-active records via `listMemories`.
+- Deterministic MMR diversity re-ranking: `applyMmr` and
+  `RankOptions.mmr: { lambda }` (token-overlap similarity, no embeddings);
+  `RetrievalQuery.rank` threads `RankOptions` through `engine.retrieve`.
+- Evidence grouping: `PackOptions.groupBy: 'source' | 'layer'` renders items
+  grouped (lost-in-the-middle mitigation) with citations renumbered in
+  reading order; `packet.items` keeps ranked order.
+- `metadataPolicy` is now reachable through the engine:
+  `ContextEngineOptions.metadataPolicy`, a per-call override on
+  `engine.retrieve(query, { metadataPolicy })`, and
+  `RetrieveAndPackOptions.metadataPolicy`. `METADATA_ALLOWLIST` is exported
+  and now includes `startWord`/`endWord` so text-chunk offsets survive the
+  default policy.
+- Typed AI Nugget bridge: exported `AiNuggetMetadata` interface,
+  `hasAiNuggetContext` is a type predicate, and metadata includes
+  `contextManifestHash` when the pack carries a manifest.
+- Deterministic ranking support: `RankOptions.now` and optional `nowMs`
+  parameters on `recencyBoost`/`daysSince`.
+- Tests: new `budget`, `rank`, `manifest`, and `citations` test files plus
+  lifecycle/policy/safety/chunking/bridge extensions (48 -> 106 tests).
+- Repo-specific QA instructions (`.ai/qa.md`) for the package contract,
+  generated-artifact drift, security invariants, examples, and honest
+  browser/live-check applicability (previously listed under Unreleased).
 
 ### Changed
 
-- Added repo-specific QA instructions for the package contract, generated
-  artifact drift, security invariants, examples, and honest browser/live-check
-  applicability.
+- **Breaking (behavior):** memory ranking boosts are multiplicative
+  (`score * (1 + boost)`, boost clamped to [0, 1]) instead of additive.
+  Additive boosts (up to +0.35) let any high-importance memory outrank every
+  document under RRF hybrid scores (~0.016); ranking order can change.
+  The boost also now gates on `metadata.memoryId` (which `memoryToChunk`
+  always sets) instead of `sourceKind === 'memory'` (which it does not
+  guarantee), and `scoreBreakdown` reports
+  `preBoostScore`/`memoryBoostFactor`/`memoryAdjusted`.
+- **Breaking (behavior):** token budgeting now counts packing overhead —
+  per-item headers and pack framing (heading, trust fence) are charged
+  against `maxTokens` by default, so `diagnostics.estimatedTokens` converges
+  with the measured `pack.tokensEstimated` instead of under-reporting by
+  ~30%. Fewer items may fit under the same `maxTokens`; pass
+  `budgetOptions: {}` (engine) or call `applyContextBudget` without options
+  to restore raw content-only accounting.
+- `applySourceDiversity` sorts its input before assigning per-source
+  penalties, so direct callers get the same result regardless of argument
+  order (unchanged through `rankResults`).
+- `strategy: 'manual'` no longer degrades to the default retriever: it
+  short-circuits to an empty packet with `retrievalMode: 'manual'` and an
+  explanatory diagnostics reason (apps supply results via
+  `packetFromResults`).
+- `formatSourceLabel` uses explicit `!== undefined` checks (0-valued
+  `page`/`lineStart`/`lineEnd` now render) and shows page and line range
+  together instead of treating them as mutually exclusive.
+- `tokenize` is Unicode-aware (`\p{L}\p{N}`); pure-ASCII output is
+  unchanged. `DEFAULT_STOPWORDS` documents exactly where it applies (only
+  the engine's empty-query diagnostic heuristic — retrievers stay
+  stopword-free because BM25's IDF already down-weights common terms).
+- `markdownChunker` tracks code fences: `#` lines inside ```` ``` ````/`~~~`
+  blocks (shell comments, shebangs) no longer split sections or pollute
+  heading paths.
+- Secret-redaction patterns for `sk-`/`AIza`/`Bearer` are anchored with
+  lookbehinds so prefixed identifiers (`task-sk-...`, `abcAIza...`,
+  `MyBearer ...`) are no longer false positives.
+- `wrapUntrustedSourceData` validates the nonce against `[A-Za-z0-9_-]+` and
+  throws on anything that would make the fence ambiguous.
+- `npm test` uses a shell-independent glob (`node --test "tests/*.test.mjs"`).
+- `package.json` `files` now ships `dist/**/*.js.map`, fixing broken
+  `sourceMappingURL` references in the published tarball; `package-lock.json`
+  version drift (0.1.0) fixed.
+- `publish.yml` tag verification moved to `scripts/verify-release-tag.mjs`
+  (the inline `node -e` one-liner had backticks/`${...}` mangled by bash —
+  shellcheck SC2006/SC2086); npm publishing now uses `--provenance` with
+  `id-token: write`.
+- GitHub Pages workflow renders the README as real HTML (via `marked` at
+  build time; the runtime library remains zero-dependency) instead of an
+  escaped `<pre>` dump.
+- Repo hygiene: `.gitleaks.toml` allowlists the intentional fake secret
+  fixtures in `tests/safety.test.mjs`; `.markdownlint-cli2.jsonc` configures
+  MD013/MD024 sanely; historical audit/implementation-plan docs carry
+  superseded banners; examples document their Node 22.6+ requirement.
+
+### Fixed
+
+- Budget accounting is consistent for mixed explicit/estimated token counts,
+  and `tokensEstimated` always equals the accumulated admission total
+  (previously unverified; now unit-tested).
+- Top-ranked items dropped by budget constraints are no longer silent — the
+  skip-and-continue admission is traced through `packet.exclusions` and the
+  manifest.
 
 ## 0.4.0
 

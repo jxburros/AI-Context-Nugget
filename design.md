@@ -69,11 +69,15 @@ Layers are strings so apps can add their own.
 
 A `ContextPacket` is the structured, inspectable retrieval result. A packet should exist before a prompt string exists.
 
-A packet records query, layers, items, sources, budget, retrieval mode, degraded mode, diagnostics, and visibility summary.
+A packet records query, layers, items, sources, budget, retrieval mode, degraded mode, diagnostics, exclusions (dropped candidates with machine-readable reasons), and visibility summary.
 
 ### Pack
 
 A `ContextPack` is a model-ready representation of a packet. It contains prompt-ready text but preserves citations, sources, token estimates, and packet metadata.
+
+### Manifest
+
+A `ContextManifest` is the pack's audit record: every included item with its locator, trust/authority class, scores, and content hash; every excluded candidate with reasons; the budget actually spent (including packing overhead); and a deterministic `packageHash` that covers the selection but not time or scores — so identical selections hash identically across runs and manifests can be diffed/replayed. The primary product is a reproducible package **plus** an inspectable manifest, not merely a prompt string.
 
 ## Lifecycle
 
@@ -97,20 +101,22 @@ Retrieved content is not authority. It can be wrong, stale, malicious, or irrele
 
 The packer supports an untrusted-source-data boundary that explicitly tells downstream model calls to treat retrieved content as evidence, not instructions.
 
-## What is included as of 0.3.0
+`trust` and `authorityClass` are deliberately separate fields: trust drives handling of retrieved text (fencing, labeling), while `authorityClass` (`application_policy`, `project_instruction`, `user_instruction`, `tool_result`, `derived_content`, `agent_claim`, `untrusted_content`) records what kind of authority content carries for audit and precedence decisions.
 
-- Source/chunk/source-ref/citation/packet/pack types.
-- Text and Markdown chunkers with exact offset-based line ranges and per-source-kind overrides (`chunkerByKind`).
+## What is included as of 0.5.0
+
+- Source/chunk/source-ref/citation/packet/pack/manifest types, with `authorityClass` typing alongside `trust`.
+- Text and Markdown chunkers with exact offset-based line ranges, code-fence-aware section parsing, and per-source-kind overrides (`chunkerByKind`).
 - Pure TypeScript BM25 retriever, keyword retriever, and a reciprocal-rank-fusion hybrid retriever.
 - `Embedder` adapter contract and a cosine-similarity `semanticRetriever`.
 - In-memory and JSON-serializable store with lifecycle operations (`removeSource`, `removeChunks`, `removeMemory`, `getMemory`) and replace-on-re-add semantics.
-- Source diversity and memory signal ranking.
-- Context budgets.
-- Citation-rich packers with honest diagnostics (`candidateChunks`, `retrievedResults`, `returnedItems`, `excludedItems`).
-- Untrusted-source-data packer with sentinel-forgery hardening and an optional per-call nonce.
-- Opt-in secret redaction and metadata-minimalism packet defaults.
-- Manual memory records with an enforced `manual`/`suggested`/`auto` policy contract, plus real expiry/archival/supersession enforcement at retrieval time.
-- AI Nugget-compatible message/metadata helpers.
+- Source diversity ranking, scale-invariant memory signal boosts, and optional deterministic MMR diversity.
+- Context budgets that count packing overhead, with machine-readable exclusion reasons for every dropped candidate.
+- Citation-rich packers with honest diagnostics (`candidateChunks`, `retrievedResults`, `returnedItems`, `excludedItems`, `overheadTokens`), optional evidence grouping (`groupBy`), and a verifiable per-pack `ContextManifest`.
+- Untrusted-source-data packer with sentinel-forgery hardening and a validated optional per-call nonce.
+- Opt-in secret redaction and metadata-minimalism packet defaults (`metadataPolicy`, reachable engine-wide or per call).
+- Memory records with an enforced `manual`/`suggested`/`auto` policy contract, real expiry/archival/supersession enforcement at retrieval time, bitemporal validity windows with `asOf` retrieval, and a governed propose/approve/dispute write path.
+- AI Nugget-compatible message/metadata helpers with a typed metadata contract.
 - Policy-driven and query-ranked source selectors.
 - Tests, recipes, CI, and runnable examples.
 

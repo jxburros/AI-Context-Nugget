@@ -36,3 +36,28 @@ test('hasAiNuggetContext is true only when metadata carries a contextPacketId', 
   assert.equal(hasAiNuggetContext(undefined), false);
   assert.equal(hasAiNuggetContext({ contextPacketId: 42 }), false);
 });
+
+test('asAiNuggetMetadata carries contextManifestHash matching pack.manifest.packageHash by default', async () => {
+  const pack = await packFor('bridge messages');
+  assert.ok(pack.manifest, 'packContext should attach a manifest by default');
+  const metadata = asAiNuggetMetadata(pack);
+  assert.equal(metadata.contextManifestHash, pack.manifest.packageHash);
+  assert.equal(typeof metadata.contextManifestHash, 'string');
+});
+
+test('asAiNuggetMetadata has no contextManifestHash when the pack opts out of the manifest', async () => {
+  const engine = new ContextEngine();
+  await engine.addSource({ id: 'doc', kind: 'text', content: 'The bridge turns a context packet into AI Nugget-compatible messages.' });
+  const pack = await engine.retrieveAndPack({ query: 'bridge messages', strategy: 'bm25' }, { includeManifest: false });
+  assert.equal(pack.manifest, undefined);
+  const metadata = asAiNuggetMetadata(pack);
+  assert.equal(metadata.contextManifestHash, undefined);
+});
+
+test('hasAiNuggetContext acts as a boolean-returning guard over asAiNuggetMetadata output', async () => {
+  const pack = await packFor('bridge messages');
+  const metadata = asAiNuggetMetadata(pack);
+  const result = hasAiNuggetContext(metadata);
+  assert.equal(typeof result, 'boolean');
+  assert.equal(result, true);
+});

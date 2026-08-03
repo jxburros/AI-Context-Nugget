@@ -1,6 +1,11 @@
 import type { ContextChunk, MemoryCandidate, MemoryDecision, MemoryPolicy, MemoryRecord } from './types.js';
 export declare const manualMemoryPolicy: MemoryPolicy;
 export declare function memoryRecordFromCandidate(candidate: MemoryCandidate, decision?: MemoryDecision): MemoryRecord;
+/**
+ * True when the record carries a `reviewAt` date at or before the reference
+ * time (default: now). Advisory only — review dates never affect retrieval.
+ */
+export declare function isDueForReview(record: MemoryRecord, asOf?: string): boolean;
 export declare function memoryToChunk(record: MemoryRecord): ContextChunk;
 /**
  * Mode x hook contract:

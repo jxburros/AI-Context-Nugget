@@ -1,5 +1,7 @@
 # Context Nugget — Implementation Plan
 
+> **Historical document.** This describes the pre-0.3.0 state and was fully executed in release 0.3.0 (see CHANGELOG.md). It is retained for reference and is not a live tracker.
+
 Derived from `docs/audit-2026-07-10.md` (finding IDs `P*` from the prior review, `N*` from the 2026-07-10 audit). Phases are ordered so that each ships independently, tests land with the code they verify, and the docs-truth pass happens *after* behavior stabilizes.
 
 Versioning stance: the package is unpublished at `0.1.0`, so breaking changes to `ContextStore` and diagnostics are acceptable now and cheap; land them before anything ships to npm. Target: phases 0–4 ⇒ `v0.2.0` (first publishable), phases 5–6 ⇒ `v0.3.0`.

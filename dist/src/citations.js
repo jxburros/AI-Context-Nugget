@@ -4,12 +4,11 @@ function joinDefined(parts, sep) {
 export function formatSourceLabel(source) {
     const base = source.title ?? source.path ?? source.url ?? source.sourceId;
     const section = source.section ? ` > ${source.section}` : '';
-    const location = source.page
-        ? ` p.${source.page}`
-        : source.lineStart
-            ? ` L${source.lineStart}${source.lineEnd && source.lineEnd !== source.lineStart ? `-L${source.lineEnd}` : ''}`
-            : '';
-    return `${base}${section}${location}`;
+    const page = source.page !== undefined ? ` p.${source.page}` : '';
+    const lines = source.lineStart !== undefined
+        ? ` L${source.lineStart}${source.lineEnd !== undefined && source.lineEnd !== source.lineStart ? `-L${source.lineEnd}` : ''}`
+        : '';
+    return `${base}${section}${page}${lines}`;
 }
 export function createCitation(source, index) {
     return {
