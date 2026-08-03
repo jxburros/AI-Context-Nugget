@@ -103,7 +103,7 @@ The packer supports an untrusted-source-data boundary that explicitly tells down
 
 `trust` and `authorityClass` are deliberately separate fields: trust drives handling of retrieved text (fencing, labeling), while `authorityClass` (`application_policy`, `project_instruction`, `user_instruction`, `tool_result`, `derived_content`, `agent_claim`, `untrusted_content`) records what kind of authority content carries for audit and precedence decisions.
 
-## What is included as of 0.5.0
+## What is included as of 0.5.1
 
 - Source/chunk/source-ref/citation/packet/pack/manifest types, with `authorityClass` typing alongside `trust`.
 - Text and Markdown chunkers with exact offset-based line ranges, code-fence-aware section parsing, and per-source-kind overrides (`chunkerByKind`).
@@ -112,7 +112,7 @@ The packer supports an untrusted-source-data boundary that explicitly tells down
 - In-memory and JSON-serializable store with lifecycle operations (`removeSource`, `removeChunks`, `removeMemory`, `getMemory`) and replace-on-re-add semantics.
 - Source diversity ranking, scale-invariant memory signal boosts, and optional deterministic MMR diversity.
 - Context budgets that count packing overhead, with machine-readable exclusion reasons for every dropped candidate.
-- Citation-rich packers with honest diagnostics (`candidateChunks`, `retrievedResults`, `returnedItems`, `excludedItems`, `overheadTokens`), optional evidence grouping (`groupBy`), and a verifiable per-pack `ContextManifest`.
+- Citation-rich packers with honest diagnostics (`candidateChunks`, `retrievedResults`, `returnedItems`, `excludedItems`, `overheadTokens`), optional evidence grouping (`groupBy`), and a verifiable per-pack `ContextManifest`. A packet with no items packs to empty text — the packer never announces context that is not there.
 - Untrusted-source-data packer with sentinel-forgery hardening and a validated optional per-call nonce.
 - Opt-in secret redaction and metadata-minimalism packet defaults (`metadataPolicy`, reachable engine-wide or per call).
 - Memory records with an enforced `manual`/`suggested`/`auto` policy contract, real expiry/archival/supersession enforcement at retrieval time, bitemporal validity windows with `asOf` retrieval, and a governed propose/approve/dispute write path.

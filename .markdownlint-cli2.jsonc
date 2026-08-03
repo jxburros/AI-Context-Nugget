@@ -16,7 +16,11 @@
     "**/*.md"
   ],
   "ignores": [
-    "node_modules/**",
+    // Must be `**/node_modules/**`, not `node_modules/**`: once the examples
+    // are installed, each `examples/*/node_modules/@jxburros/context-nugget`
+    // is a `file:../..` symlink back to the repo root, so a walker that
+    // descends nested node_modules recurses forever.
+    "**/node_modules/**",
     "dist/**",
     "nugget/**",
     // Frozen historical/imported records (see their banners) — not reformatted.

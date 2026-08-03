@@ -1,6 +1,6 @@
 {
   "name": "@jxburros/context-nugget",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": false,
   "type": "module",
   "description": "A pliable context and memory scaffolding engine for AI apps.",

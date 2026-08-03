@@ -2,7 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## 0.5.1
+
+A correctness and release-readiness pass over the 0.5.0 tree: one honesty fix
+in packed output, one diagnostics fix, and the packaging/CI/lint gaps that
+made the repo not actually tag-ready.
 
 ### Fixed
 
@@ -23,9 +27,26 @@ All notable changes to this project are documented in this file.
 - `.markdownlint-cli2.jsonc` declares `globs`. Without it a bare
   `markdownlint-cli2` matched no files and reported a vacuous
   "0 issues in 0 files"; it now lints the 17 live markdown files.
+- `.markdownlint-cli2.jsonc` ignores `**/node_modules/**` rather than
+  `node_modules/**`. Once the examples are installed, each
+  `examples/*/node_modules/@jxburros/context-nugget` is a `file:../..` symlink
+  back to the repo root, so the top-level-only ignore let the linter recurse
+  into the repo through itself and hang indefinitely.
+
+### Added
+
+- CI `lint` job (markdownlint + gitleaks, both version-pinned).
+  `.markdownlint-cli2.jsonc` and `.gitleaks.toml` had existed since 0.5.0 but
+  nothing ever ran them, so neither config was enforced on any commit.
 
 ### Changed
 
+- Docs refreshed against the 0.5.1 tree: `design.md`'s included-features list,
+  `docs/security-model.md` (packed output no longer overstates itself),
+  `docs/release-checklist.md` (lint job, shipped `docs/security-model.md`), the
+  README's CI description, and `.ai/qa.md` — the QA profile predated the 0.5.0
+  feature set and never mentioned the manifest, `authorityClass`, bitemporal or
+  governed memory, determinism pinning, or the repo hygiene gates.
 - CI/publish/Pages workflows use `actions/checkout@v5` and
   `actions/setup-node@v5`; the `@v4` pins target the deprecated Node 20 runner
   and were being force-migrated with a warning on every run.

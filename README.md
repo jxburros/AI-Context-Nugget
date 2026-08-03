@@ -59,7 +59,7 @@ import {
 - AI Nugget bridge helpers that produce compatible message and metadata objects without importing AI Nugget.
 - Source selection helpers for policy-driven context and query-ranked source selection.
 - Tests (see `tests/`) and recipes for document Q&A, layered memory, untrusted repo review, GitHub issue context, workspace context, card knowledge, and spec-driven context.
-- CI on Node 20.x/22.x (`.github/workflows/ci.yml`), including a job that installs and runs each example against the built package.
+- CI on Node 20.x/22.x (`.github/workflows/ci.yml`): typecheck/build/test/pack, a generated-artifact drift gate for `dist/` and `nugget/`, a markdownlint + gitleaks lint gate, and a job that installs and runs each example against the built package.
 
 ## Install / use
 

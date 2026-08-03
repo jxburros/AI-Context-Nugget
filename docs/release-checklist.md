@@ -1,7 +1,7 @@
 # Release checklist
 
-1. **Version bump + changelog.** Update `version` in `package.json` and add a dated entry to `CHANGELOG.md` describing what changed, calling out breaking changes explicitly.
-2. **CI green.** Confirm the CI workflow (`.github/workflows/ci.yml`) is green on the commit being released: typecheck, build, test, `build:nugget`, and `npm pack --dry-run` on Node 20.x and 22.x, plus the `nugget-drift` and `examples` jobs.
+1. **Version bump + changelog.** Update `version` in `package.json`, re-run `npm install --package-lock-only` so `package-lock.json` follows, and add a `## X.Y.Z` entry to `CHANGELOG.md` describing what changed, calling out breaking changes explicitly. `nugget/VERSION.txt` is stamped from `package.json` by `npm run build:nugget` — rebuild it in the same commit or the `nugget-drift` gate fails.
+2. **CI green.** Confirm the CI workflow (`.github/workflows/ci.yml`) is green on the commit being released: typecheck, build, test, `build:nugget`, and `npm pack --dry-run` on Node 20.x and 22.x, plus the `lint` (markdownlint + gitleaks), `nugget-drift`, and `examples` jobs.
 3. **`npm pack` inspection.**
    - Run `npm pack --dry-run` and review the file list — it should contain `dist/**/*.js`, `dist/**/*.d.ts`, `dist/**/*.js.map`, `nugget/`, `README.md`, `design.md`, `docs/security-model.md` (README and `design.md` both link to it), `CHANGELOG.md`, `recipes/`, and `LICENSE`. It should **not** contain `src/`, test files, or `examples/` (examples depend on the package via `file:../..` and are for local/CI use, not for shipping in the tarball).
    - Install-from-tarball smoke test:
