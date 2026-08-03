@@ -12,6 +12,33 @@ AI Nugget     -> talks to model providers
 Your app      -> owns prompts, policy, storage, privacy, consent, UI, deletion, and lifecycle
 ```
 
+## Main exports
+
+The package has two entry points:
+
+```ts
+// Everything: engine, chunkers, retrievers, store, ranking, budgeting,
+// packing, citations, safety, memory, manifest, selectors, types.
+import {
+  ContextEngine,        // orchestrator: addSource / addMemory / retrieve / retrieveAndPack
+  createContextEngine,
+  textChunker, markdownChunker,
+  bm25Retriever, keywordRetriever, hybridRetriever, semanticRetriever,
+  InMemoryContextStore,
+  packetFromResults, packContext,          // packet/pack assembly without the engine
+  applyContextBudget, rankResults,
+  buildManifest, verifyManifest,           // audit manifest helpers
+  wrapUntrustedSourceData, redactText,
+} from '@jxburros/context-nugget';
+
+// AI Nugget bridge only (dependency-free helpers for provider-facing apps).
+import {
+  asAiNuggetContextMessages,
+  asAiNuggetMetadata,
+  hasAiNuggetContext,
+} from '@jxburros/context-nugget/ai-nugget';
+```
+
 ## What is included
 
 - Core public types for sources, chunks, memory records, layers, retrieval results, citations, packets, and packs.
@@ -19,8 +46,12 @@ Your app      -> owns prompts, policy, storage, privacy, consent, UI, deletion, 
 - In-memory / JSON-serializable store with real lifecycle operations: `removeSource`, `removeChunks`, `removeMemory`, `getMemory`. Re-adding a source or memory **replaces** its previously indexed chunks.
 - Dependency-light BM25 retrieval ported from the same pure TypeScript idea used in AI-model-test.
 - Keyword and reciprocal-rank-fusion (RRF) hybrid retrievers, plus a `semanticRetriever(embedder)` adapter contract for apps that bring their own embeddings.
-- Ranking helpers for source diversity, recency, importance, and confidence signals.
-- Budget enforcement for max items, chars, tokens, and items per source.
+- Ranking helpers for source diversity, recency, importance, and confidence signals (scale-invariant memory boosts), plus optional deterministic MMR diversity (`RankOptions.mmr`).
+- Budget enforcement for max items, chars, tokens, and items per source — token budgeting counts packing overhead (item headers, trust fences), and every dropped candidate is recorded in `packet.exclusions` with machine-readable reasons.
+- A versioned, hashable **context manifest** on every pack (`pack.manifest`): included items with locators, trust/authority classes, scores, and content hashes; excluded candidates with reasons; budget actually spent; and a deterministic `packageHash` for replay/diff (`buildManifest`, `verifyManifest`).
+- `authorityClass` typing on sources/chunks/items (`application_policy`, `user_instruction`, `untrusted_content`, ...), independent of `trust`.
+- Bitemporal memory (`validFrom`/`validTo`/`observedAt`/`reviewAt` + `RetrievalQuery.asOf`) and a governed memory write path (`proposeMemory` / `approveMemory` / `disputeMemory` with `proposed`/`disputed` statuses excluded from retrieval).
+- Optional evidence grouping in packed output (`PackOptions.groupBy: 'source' | 'layer'`) with citation renumbering in reading order.
 - Citation formatting and source labels.
 - Trusted/untrusted context packing, including an untrusted-source-data boundary (with sentinel-forgery hardening) inspired by QAI-ality. See `docs/security-model.md`.
 - Manual memory records with an enforced approval-policy contract (`manual` / `suggested` / `auto`) and real lifecycle: `shouldExpire`/`shouldRetrieve` are applied at retrieval time, and `supersedes` retires the memory it replaces. Auto-writing memory is not enabled by default.
@@ -183,7 +214,9 @@ const packet = await engine.retrieve({
 
 console.log(packet.visibilitySummary);
 console.log(packet.diagnostics);
-// { candidateChunks, retrievedResults, returnedItems, excludedItems, estimatedTokens, estimatedChars, reasons }
+// { candidateChunks, retrievedResults, returnedItems, excludedItems, estimatedTokens, estimatedChars, overheadTokens, reasons }
+console.log(packet.exclusions);
+// [{ id, locator, score, reasons: ['max-tokens' | 'per-source-cap' | 'policy-filtered' | ...] }]
 
 const pack = packContext(packet, {
   trustBoundary: 'untrusted-source-data',
@@ -221,7 +254,7 @@ Those belong to the consuming app.
 
 ## Examples
 
-`examples/` in this repository has three runnable, self-contained examples (`minimal-doc-qa`, `ai-nugget-chatbot`, `github-issue-triage`), each with its own `package.json` depending on the local build (`file:../..`). They are not part of the published npm package; clone the repo, run `npm run build` at the root, then `cd examples/<name> && npm install && npm start`.
+`examples/` in this repository has three runnable, self-contained examples (`minimal-doc-qa`, `ai-nugget-chatbot`, `github-issue-triage`), each with its own `package.json` depending on the local build (`file:../..`). They are not part of the published npm package; clone the repo, run `npm run build` at the root, then `cd examples/<name> && npm install && npm start`. The examples run TypeScript directly via `node --experimental-strip-types` and need **Node 22.6+**; the library itself supports Node >= 20.
 
 ## Design lineage
 

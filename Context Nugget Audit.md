@@ -1,5 +1,7 @@
 # Context Nugget — Comprehensive Review & Audit
 
+> **Resolved.** Every open item in this audit's punch list (§5) was addressed in release 0.5.0 — see CHANGELOG.md. Retained for reference.
+
 **Date:** 2026-07-10
 **Repo:** `jxburros/AI-Context-Nugget` (main branch, commit `ab7e83a`)
 **Auditor:** Devin

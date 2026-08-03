@@ -26,6 +26,7 @@ Per `design.md`'s boundary: prompts, model providers, storage policy, privacy po
 ## Practical guidance
 
 - Always set `trust` on sources you don't fully control (repo files, web content, user-uploaded documents) and pack them with `trustBoundary: 'untrusted-source-data'`.
-- Pass a fresh random `trustBoundaryNonce` per `packContext` call when packing untrusted content, if your runtime has a source of randomness available (Context Nugget stays dependency-free and does not generate one itself).
+- Pass a fresh random `trustBoundaryNonce` per `packContext` call when packing untrusted content, if your runtime has a source of randomness available (Context Nugget stays dependency-free and does not generate one itself). The nonce must match `[A-Za-z0-9_-]+`; anything else (spaces, `==`, newlines) would make the fence text ambiguous, so `wrapUntrustedSourceData` throws on invalid nonces rather than emitting a weakened fence.
+- `pack.manifest` records what was included and excluded and why, with content hashes and a deterministic `packageHash` — treat it as the audit trail for what a model was shown. Note that the manifest contains source locators and (via `scoreBreakdown`) retrieval internals; apply the same care to logging manifests as to logging packs.
 - Treat `PackOptions.redact` as a defense-in-depth layer, not a substitute for not indexing secrets in the first place.
 - Use `metadataPolicy: 'all'` only when you have already reviewed what's in your source metadata and are comfortable with it reaching packed output and any logging/inspection downstream of it.
