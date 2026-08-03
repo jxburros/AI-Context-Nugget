@@ -9,20 +9,23 @@ import type {
   MemoryCandidate,
   MemoryPolicy,
   MemoryRecord,
+  PacketExclusion,
   PackOptions,
   RetrievalQuery,
   RetrieveAndPackOptions,
   Retriever,
 } from './types.js';
+import type { BudgetOptions } from './budget.js';
 import { markdownChunker, textChunker } from './chunk.js';
 import { bm25Retriever } from './retrieval/bm25.js';
 import { keywordRetriever } from './retrieval/keyword.js';
 import { hybridRetriever } from './retrieval/hybrid.js';
 import { InMemoryContextStore } from './stores/memoryStore.js';
 import { memoryRecordFromCandidate, memoryToChunk, shouldStoreMemory, manualMemoryPolicy } from './memory.js';
-import { packetFromResults, packContext } from './pack.js';
+import { defaultItemOverheadTokens, estimatePackFixedOverheadTokens, packetFromResults, packContext, type MetadataPolicy } from './pack.js';
 import { rankResults } from './rank.js';
 import { DEFAULT_STOPWORDS, tokenize } from './tokenize.js';
+import { nowIso } from './util.js';
 
 export interface ContextEngineOptions {
   store?: ContextStore;
@@ -36,6 +39,15 @@ export interface ContextEngineOptions {
   retrievers?: Record<string, Retriever>;
   memoryPolicy?: MemoryPolicy;
   chunkerOptions?: ChunkerOptions;
+  /** Engine-wide default metadata projection for packet items; per-call options win. */
+  metadataPolicy?: MetadataPolicy;
+}
+
+export interface RetrieveOptions {
+  /** Metadata projection for this call's packet items; wins over the engine default. */
+  metadataPolicy?: MetadataPolicy;
+  /** Budget-time packing-overhead accounting; defaults to the per-item header estimate. */
+  budgetOptions?: BudgetOptions;
 }
 
 const BUILTIN_RETRIEVERS: Record<string, () => Retriever> = {
@@ -52,6 +64,7 @@ export class ContextEngine {
   private readonly retrievers: Record<string, Retriever>;
   private readonly memoryPolicy: MemoryPolicy;
   private readonly defaultChunkerOptions: ChunkerOptions;
+  private readonly metadataPolicy?: MetadataPolicy;
 
   constructor(options: ContextEngineOptions = {}) {
     this.store = options.store ?? new InMemoryContextStore();
@@ -61,6 +74,7 @@ export class ContextEngine {
     this.retrievers = options.retrievers ?? {};
     this.memoryPolicy = options.memoryPolicy ?? manualMemoryPolicy;
     this.defaultChunkerOptions = options.chunkerOptions ?? {};
+    this.metadataPolicy = options.metadataPolicy;
   }
 
   /**
@@ -130,12 +144,53 @@ export class ContextEngine {
   }
 
   /**
+   * Governed write path: stores the candidate as `status: 'proposed'`. Proposed
+   * records never appear in retrieval; list them with
+   * `listMemories({ memoryStatuses: ['proposed'] })` and call `approveMemory`
+   * (or `disputeMemory`) to resolve them.
+   */
+  async proposeMemory(candidate: MemoryCandidate): Promise<MemoryRecord> {
+    const record = memoryRecordFromCandidate(candidate, { store: true, record: { status: 'proposed' } });
+    await this.addMemory(record);
+    return record;
+  }
+
+  /** Flips a proposed (or disputed) record to `'active'` and re-indexes its chunk. */
+  async approveMemory(memoryId: string): Promise<MemoryRecord | undefined> {
+    const record = await this.store.getMemory(memoryId);
+    if (!record) return undefined;
+    const updated: MemoryRecord = { ...record, status: 'active', updatedAt: nowIso() };
+    await this.addMemory(updated);
+    return updated;
+  }
+
+  /** Marks a record `'disputed'` (removing it from retrieval) without deleting it. */
+  async disputeMemory(memoryId: string, reason?: string): Promise<MemoryRecord | undefined> {
+    const record = await this.store.getMemory(memoryId);
+    if (!record) return undefined;
+    const updated: MemoryRecord = {
+      ...record,
+      status: 'disputed',
+      updatedAt: nowIso(),
+      metadata: { ...record.metadata, ...(reason ? { disputeReason: reason } : {}) },
+    };
+    await this.store.addMemory(updated);
+    await this.store.removeChunks({ memoryId });
+    return updated;
+  }
+
+  /**
    * Applies `memoryPolicy.shouldExpire`/`shouldRetrieve` to memory-backed chunks.
    * Non-memory chunks always pass through. Drops are recorded as diagnostics reasons.
    */
-  private async filterByMemoryPolicy(chunks: ContextChunk[], query: RetrievalQuery): Promise<{ candidates: ContextChunk[]; reasons: string[] }> {
+  private async filterByMemoryPolicy(chunks: ContextChunk[], query: RetrievalQuery): Promise<{ candidates: ContextChunk[]; reasons: string[]; exclusions: PacketExclusion[] }> {
     const candidates: ContextChunk[] = [];
     const reasons: string[] = [];
+    const exclusions: PacketExclusion[] = [];
+    const exclude = (chunk: ContextChunk, reason: string): void => {
+      reasons.push(reason);
+      exclusions.push({ id: chunk.id, locator: chunk.source, reasons: ['policy-filtered'] });
+    };
     for (const chunk of chunks) {
       const memoryId = chunk.metadata?.memoryId;
       if (typeof memoryId !== 'string') {
@@ -144,20 +199,20 @@ export class ContextEngine {
       }
       const record = await this.store.getMemory(memoryId);
       if (!record) {
-        reasons.push(`memory ${memoryId} excluded: orphan chunk`);
+        exclude(chunk, `memory ${memoryId} excluded: orphan chunk`);
         continue;
       }
       if (this.memoryPolicy.shouldExpire && (await this.memoryPolicy.shouldExpire(record))) {
-        reasons.push(`memory ${memoryId} excluded by shouldExpire`);
+        exclude(chunk, `memory ${memoryId} excluded by shouldExpire`);
         continue;
       }
       if (this.memoryPolicy.shouldRetrieve && !(await this.memoryPolicy.shouldRetrieve(record, query))) {
-        reasons.push(`memory ${memoryId} excluded by shouldRetrieve`);
+        exclude(chunk, `memory ${memoryId} excluded by shouldRetrieve`);
         continue;
       }
       candidates.push(chunk);
     }
-    return { candidates, reasons };
+    return { candidates, reasons, exclusions };
   }
 
   /**
@@ -183,19 +238,36 @@ export class ContextEngine {
     };
   }
 
-  async retrieve(query: RetrievalQuery): Promise<ContextPacket> {
+  async retrieve(query: RetrievalQuery, options: RetrieveOptions = {}): Promise<ContextPacket> {
+    const metadataPolicy = options.metadataPolicy ?? this.metadataPolicy;
+
+    if (query.strategy === 'manual') {
+      // 'manual' means the app hand-picks results (packetFromResults). Skip
+      // retrieval instead of degrading to an unrelated default retriever.
+      return packetFromResults([], {
+        query: query.query,
+        layers: query.layers,
+        budget: query.budget,
+        retrievalMode: 'manual',
+        candidateChunks: 0,
+        metadataPolicy,
+        budgetOptions: options.budgetOptions,
+        diagnosticsReasons: ['manual strategy: retrieval skipped; supply results via packetFromResults'],
+      });
+    }
+
     const rawChunks = await this.store.listChunks(query);
-    const { candidates, reasons: policyReasons } = await this.filterByMemoryPolicy(rawChunks, query);
+    const { candidates, reasons: policyReasons, exclusions: policyExclusions } = await this.filterByMemoryPolicy(rawChunks, query);
 
     const { retriever, degraded, degradedReason } = this.resolveRetriever(query.strategy);
 
     const queryReasons: string[] = [];
-    if (query.strategy !== 'manual' && tokenize(query.query, { stopwords: DEFAULT_STOPWORDS }).length === 0) {
+    if (tokenize(query.query, { stopwords: DEFAULT_STOPWORDS }).length === 0) {
       queryReasons.push('query produced no searchable terms');
     }
 
     const rawResults = await retriever.retrieve(query, candidates);
-    const ranked = rankResults(rawResults);
+    const ranked = rankResults(rawResults, query.rank ?? {});
     return packetFromResults(ranked, {
       query: query.query,
       layers: query.layers,
@@ -204,13 +276,23 @@ export class ContextEngine {
       degraded,
       degradedReason,
       candidateChunks: candidates.length,
+      metadataPolicy,
+      budgetOptions: options.budgetOptions,
+      policyExclusions,
       diagnosticsReasons: [...queryReasons, ...policyReasons, ...ranked.flatMap((result) => result.reasons ?? [])].slice(0, 12),
     });
   }
 
   async retrieveAndPack(options: RetrieveAndPackOptions, packOptions?: PackOptions): Promise<ContextPack> {
-    const packet = await this.retrieve(options);
-    return packContext(packet, { ...(options.pack ?? {}), ...(packOptions ?? {}) });
+    const mergedPackOptions: PackOptions = { ...(options.pack ?? {}), ...(packOptions ?? {}) };
+    const packet = await this.retrieve(options, {
+      metadataPolicy: options.metadataPolicy,
+      budgetOptions: {
+        overheadTokensPerItem: defaultItemOverheadTokens,
+        overheadTokensFixed: estimatePackFixedOverheadTokens(mergedPackOptions),
+      },
+    });
+    return packContext(packet, mergedPackOptions);
   }
 }
 

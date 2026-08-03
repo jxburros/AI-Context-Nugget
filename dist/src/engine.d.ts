@@ -1,5 +1,7 @@
 import type { Chunker, ChunkerOptions, ContextPack, ContextPacket, ContextSource, ContextStore, MemoryCandidate, MemoryPolicy, MemoryRecord, PackOptions, RetrievalQuery, RetrieveAndPackOptions, Retriever } from './types.js';
+import type { BudgetOptions } from './budget.js';
 import { shouldStoreMemory } from './memory.js';
+import { type MetadataPolicy } from './pack.js';
 export interface ContextEngineOptions {
     store?: ContextStore;
     /** Default chunker used for every source kind unless overridden by `chunkerByKind`. */
@@ -12,6 +14,14 @@ export interface ContextEngineOptions {
     retrievers?: Record<string, Retriever>;
     memoryPolicy?: MemoryPolicy;
     chunkerOptions?: ChunkerOptions;
+    /** Engine-wide default metadata projection for packet items; per-call options win. */
+    metadataPolicy?: MetadataPolicy;
+}
+export interface RetrieveOptions {
+    /** Metadata projection for this call's packet items; wins over the engine default. */
+    metadataPolicy?: MetadataPolicy;
+    /** Budget-time packing-overhead accounting; defaults to the per-item header estimate. */
+    budgetOptions?: BudgetOptions;
 }
 export declare class ContextEngine {
     readonly store: ContextStore;
@@ -21,6 +31,7 @@ export declare class ContextEngine {
     private readonly retrievers;
     private readonly memoryPolicy;
     private readonly defaultChunkerOptions;
+    private readonly metadataPolicy?;
     constructor(options?: ContextEngineOptions);
     /**
      * Resolves the chunker for a source kind: `chunkerByKind[kind]` wins over the
@@ -51,6 +62,17 @@ export declare class ContextEngine {
         record?: MemoryRecord;
     }>;
     /**
+     * Governed write path: stores the candidate as `status: 'proposed'`. Proposed
+     * records never appear in retrieval; list them with
+     * `listMemories({ memoryStatuses: ['proposed'] })` and call `approveMemory`
+     * (or `disputeMemory`) to resolve them.
+     */
+    proposeMemory(candidate: MemoryCandidate): Promise<MemoryRecord>;
+    /** Flips a proposed (or disputed) record to `'active'` and re-indexes its chunk. */
+    approveMemory(memoryId: string): Promise<MemoryRecord | undefined>;
+    /** Marks a record `'disputed'` (removing it from retrieval) without deleting it. */
+    disputeMemory(memoryId: string, reason?: string): Promise<MemoryRecord | undefined>;
+    /**
      * Applies `memoryPolicy.shouldExpire`/`shouldRetrieve` to memory-backed chunks.
      * Non-memory chunks always pass through. Drops are recorded as diagnostics reasons.
      */
@@ -65,7 +87,7 @@ export declare class ContextEngine {
      * one case of the general rule.
      */
     private resolveRetriever;
-    retrieve(query: RetrievalQuery): Promise<ContextPacket>;
+    retrieve(query: RetrievalQuery, options?: RetrieveOptions): Promise<ContextPacket>;
     retrieveAndPack(options: RetrieveAndPackOptions, packOptions?: PackOptions): Promise<ContextPack>;
 }
 export declare function createContextEngine(options?: ContextEngineOptions): ContextEngine;

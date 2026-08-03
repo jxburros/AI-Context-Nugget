@@ -16,6 +16,7 @@ export function asAiNuggetMetadata(pack) {
         contextSources: pack.sources,
         contextCitations: pack.citations,
         contextTokensEstimated: pack.tokensEstimated,
+        contextManifestHash: pack.manifest?.packageHash,
     };
 }
 /**

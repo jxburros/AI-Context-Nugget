@@ -1,5 +1,6 @@
 import type { Chunker, ChunkerOptions, ContextChunk, ContextSource, ContextSourceRef } from './types.js';
 import { estimateTokens, makeId } from './util.js';
+import { defaultAuthorityClass } from './safety.js';
 
 export interface TextChunkerOptions extends ChunkerOptions {
   preserveParagraphs?: boolean;
@@ -16,8 +17,8 @@ function sourceRefFor(source: ContextSource, extra: Partial<ContextSourceRef> = 
   };
 }
 
-function wordsOf(text: string): string[] {
-  return text.trim().split(/\s+/).filter(Boolean);
+function countWords(text: string): number {
+  return (text.match(/\S+/g) ?? []).length;
 }
 
 interface WordOffset {
@@ -103,6 +104,7 @@ export function textChunker(defaults: TextChunkerOptions = {}): Chunker {
           text: chunk.text,
           layer,
           trust: source.trust ?? 'untrusted',
+          authorityClass: defaultAuthorityClass(source),
           metadata: { ...source.metadata, chunkIndex: index, startWord: chunk.startWord, endWord: chunk.endWord },
           tokensEstimated: estimateTokens(chunk.text),
           createdAt: source.createdAt,
@@ -124,6 +126,10 @@ function parseMarkdownSections(markdown: string): MarkdownSection[] {
   const sections: MarkdownSection[] = [];
   let headingStack: string[] = [];
   let current: MarkdownSection = { headingPath: [], startLine: 1, lines: [] };
+  // Open code fence, if any: `#` lines inside ```/~~~ fences (shell comments,
+  // shebangs) are content, not headings. A fence closes only on a line of the
+  // same character with at least the opening run's length.
+  let fence: { char: string; length: number } | null = null;
 
   const pushCurrent = () => {
     if (current.lines.join('\n').trim()) sections.push(current);
@@ -131,6 +137,17 @@ function parseMarkdownSections(markdown: string): MarkdownSection[] {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? '';
+    const fenceMarker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      current.lines.push(line);
+      if (fenceMarker && fenceMarker[0] === fence.char && fenceMarker.length >= fence.length) fence = null;
+      continue;
+    }
+    if (fenceMarker) {
+      fence = { char: fenceMarker[0] ?? '`', length: fenceMarker.length };
+      current.lines.push(line);
+      continue;
+    }
     const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
     if (heading) {
       pushCurrent();
@@ -171,7 +188,7 @@ function paragraphsWithOffsets(text: string): WordOffset[] {
  */
 function splitSectionWithOffsets(sectionRawText: string, maxWords: number, overlapWords: number): SectionPiece[] {
   if (!sectionRawText.trim()) return [];
-  if (wordsOf(sectionRawText).length <= maxWords) {
+  if (countWords(sectionRawText) <= maxWords) {
     const trimmed = sectionRawText.trim();
     const startOffset = sectionRawText.length - sectionRawText.trimStart().length;
     return [{ text: trimmed, startOffset, endOffset: startOffset + trimmed.length }];
@@ -193,7 +210,7 @@ function splitSectionWithOffsets(sectionRawText: string, maxWords: number, overl
   };
 
   for (const paragraph of paragraphs) {
-    const count = wordsOf(paragraph.text).length;
+    const count = countWords(paragraph.text);
     if (count > maxWords) {
       flush();
       for (const piece of chunkWords(wordsWithOffsets(paragraph.text), maxWords, overlapWords)) {
@@ -237,6 +254,7 @@ export function markdownChunker(defaults: TextChunkerOptions = {}): Chunker {
             text: piece.text,
             layer,
             trust: source.trust ?? 'untrusted',
+            authorityClass: defaultAuthorityClass(source),
             metadata: { ...source.metadata, chunkIndex: chunks.length, headingPath: section.headingPath },
             tokensEstimated: estimateTokens(piece.text),
             createdAt: source.createdAt,

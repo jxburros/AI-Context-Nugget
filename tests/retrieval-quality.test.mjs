@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ContextEngine, bm25Retriever, hybridRetriever, semanticRetriever } from '../dist/src/index.js';
+import { ContextEngine, bm25Retriever, hybridRetriever, semanticRetriever, tokenize } from '../dist/src/index.js';
 
 test('configured bm25Retriever options are honored when strategy matches its mode', async () => {
   let capturedOptions;
@@ -69,4 +69,25 @@ test('RRF hybrid fusion lets a doc ranked #1 by keyword but poorly by bm25 outra
   assert.ok(results.length > 0);
   assert.equal(results[0]?.chunk.id, 'a');
   assert.ok(results[0]?.scoreBreakdown?.rrf > 0);
+});
+
+test('tokenize is unicode-aware and BM25 retrieval finds accented-term documents', async () => {
+  assert.deepEqual(tokenize('Café RÉSUMÉ'), ['café', 'résumé']);
+
+  const engine = new ContextEngine();
+  await engine.addSource({
+    id: 'accented',
+    kind: 'text',
+    title: 'Accented',
+    content: 'The café serves a naïve but charming résumé of French classics.',
+  });
+  await engine.addSource({
+    id: 'cjk',
+    kind: 'text',
+    title: 'CJK',
+    content: '東京は今日、天気がとても良いです。',
+  });
+  const packet = await engine.retrieve({ query: 'résumé', strategy: 'bm25' });
+  assert.ok(packet.items.length > 0);
+  assert.equal(packet.items[0]?.source.sourceId, 'accented');
 });

@@ -1,8 +1,25 @@
-import type { ContextPack } from './types.js';
+import type { Citation, ContextPack, ContextSourceRef } from './types.js';
 
 export interface AiNuggetCompatibleMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+}
+
+/**
+ * The metadata contract produced by `asAiNuggetMetadata`. Downstream apps
+ * should type against this interface instead of relying on incidental keys.
+ * `contextPacketId` is the stable presence signal (see `hasAiNuggetContext`).
+ */
+export interface AiNuggetMetadata {
+  contextPacketId: string;
+  contextRetrievalMode: string;
+  contextDegraded: boolean;
+  contextSources: ContextSourceRef[];
+  contextCitations: Citation[];
+  /** Token estimate of the rendered pack text; absent for hand-built packs without one. */
+  contextTokensEstimated?: number;
+  /** `manifest.packageHash` when the pack carries a manifest. */
+  contextManifestHash?: string;
 }
 
 export function asAiNuggetContextMessages(pack: ContextPack): AiNuggetCompatibleMessage[] {
@@ -15,7 +32,7 @@ export function asAiNuggetContextMessages(pack: ContextPack): AiNuggetCompatible
   ];
 }
 
-export function asAiNuggetMetadata(pack: ContextPack): Record<string, unknown> {
+export function asAiNuggetMetadata(pack: ContextPack): AiNuggetMetadata {
   return {
     contextPacketId: pack.packet.id,
     contextRetrievalMode: pack.packet.retrievalMode,
@@ -23,6 +40,7 @@ export function asAiNuggetMetadata(pack: ContextPack): Record<string, unknown> {
     contextSources: pack.sources,
     contextCitations: pack.citations,
     contextTokensEstimated: pack.tokensEstimated,
+    contextManifestHash: pack.manifest?.packageHash,
   };
 }
 
@@ -36,6 +54,8 @@ export function asAiNuggetMetadata(pack: ContextPack): Record<string, unknown> {
  * `metadata` object given to `AIHandler.chat`/`.stream` (e.g. from a
  * `TelemetrySink` record or `CallInfo`) to check it after the fact.
  */
-export function hasAiNuggetContext(metadata: Record<string, unknown> | undefined): boolean {
+export function hasAiNuggetContext(
+  metadata: Record<string, unknown> | undefined,
+): metadata is Record<string, unknown> & { contextPacketId: string } {
   return typeof metadata?.contextPacketId === 'string';
 }

@@ -4,9 +4,10 @@ import { keywordRetriever } from './retrieval/keyword.js';
 import { hybridRetriever } from './retrieval/hybrid.js';
 import { InMemoryContextStore } from './stores/memoryStore.js';
 import { memoryRecordFromCandidate, memoryToChunk, shouldStoreMemory, manualMemoryPolicy } from './memory.js';
-import { packetFromResults, packContext } from './pack.js';
+import { defaultItemOverheadTokens, estimatePackFixedOverheadTokens, packetFromResults, packContext } from './pack.js';
 import { rankResults } from './rank.js';
 import { DEFAULT_STOPWORDS, tokenize } from './tokenize.js';
+import { nowIso } from './util.js';
 const BUILTIN_RETRIEVERS = {
     keyword: () => keywordRetriever(),
     hybrid: () => hybridRetriever(),
@@ -20,6 +21,7 @@ export class ContextEngine {
     retrievers;
     memoryPolicy;
     defaultChunkerOptions;
+    metadataPolicy;
     constructor(options = {}) {
         this.store = options.store ?? new InMemoryContextStore();
         this.chunker = options.chunker;
@@ -28,6 +30,7 @@ export class ContextEngine {
         this.retrievers = options.retrievers ?? {};
         this.memoryPolicy = options.memoryPolicy ?? manualMemoryPolicy;
         this.defaultChunkerOptions = options.chunkerOptions ?? {};
+        this.metadataPolicy = options.metadataPolicy;
     }
     /**
      * Resolves the chunker for a source kind: `chunkerByKind[kind]` wins over the
@@ -90,12 +93,52 @@ export class ContextEngine {
         return { decision, record };
     }
     /**
+     * Governed write path: stores the candidate as `status: 'proposed'`. Proposed
+     * records never appear in retrieval; list them with
+     * `listMemories({ memoryStatuses: ['proposed'] })` and call `approveMemory`
+     * (or `disputeMemory`) to resolve them.
+     */
+    async proposeMemory(candidate) {
+        const record = memoryRecordFromCandidate(candidate, { store: true, record: { status: 'proposed' } });
+        await this.addMemory(record);
+        return record;
+    }
+    /** Flips a proposed (or disputed) record to `'active'` and re-indexes its chunk. */
+    async approveMemory(memoryId) {
+        const record = await this.store.getMemory(memoryId);
+        if (!record)
+            return undefined;
+        const updated = { ...record, status: 'active', updatedAt: nowIso() };
+        await this.addMemory(updated);
+        return updated;
+    }
+    /** Marks a record `'disputed'` (removing it from retrieval) without deleting it. */
+    async disputeMemory(memoryId, reason) {
+        const record = await this.store.getMemory(memoryId);
+        if (!record)
+            return undefined;
+        const updated = {
+            ...record,
+            status: 'disputed',
+            updatedAt: nowIso(),
+            metadata: { ...record.metadata, ...(reason ? { disputeReason: reason } : {}) },
+        };
+        await this.store.addMemory(updated);
+        await this.store.removeChunks({ memoryId });
+        return updated;
+    }
+    /**
      * Applies `memoryPolicy.shouldExpire`/`shouldRetrieve` to memory-backed chunks.
      * Non-memory chunks always pass through. Drops are recorded as diagnostics reasons.
      */
     async filterByMemoryPolicy(chunks, query) {
         const candidates = [];
         const reasons = [];
+        const exclusions = [];
+        const exclude = (chunk, reason) => {
+            reasons.push(reason);
+            exclusions.push({ id: chunk.id, locator: chunk.source, reasons: ['policy-filtered'] });
+        };
         for (const chunk of chunks) {
             const memoryId = chunk.metadata?.memoryId;
             if (typeof memoryId !== 'string') {
@@ -104,20 +147,20 @@ export class ContextEngine {
             }
             const record = await this.store.getMemory(memoryId);
             if (!record) {
-                reasons.push(`memory ${memoryId} excluded: orphan chunk`);
+                exclude(chunk, `memory ${memoryId} excluded: orphan chunk`);
                 continue;
             }
             if (this.memoryPolicy.shouldExpire && (await this.memoryPolicy.shouldExpire(record))) {
-                reasons.push(`memory ${memoryId} excluded by shouldExpire`);
+                exclude(chunk, `memory ${memoryId} excluded by shouldExpire`);
                 continue;
             }
             if (this.memoryPolicy.shouldRetrieve && !(await this.memoryPolicy.shouldRetrieve(record, query))) {
-                reasons.push(`memory ${memoryId} excluded by shouldRetrieve`);
+                exclude(chunk, `memory ${memoryId} excluded by shouldRetrieve`);
                 continue;
             }
             candidates.push(chunk);
         }
-        return { candidates, reasons };
+        return { candidates, reasons, exclusions };
     }
     /**
      * Resolves the retriever for a query: an explicit `retrievers[strategy]` wins,
@@ -145,16 +188,31 @@ export class ContextEngine {
             degradedReason: `Retrieval strategy "${strategy}" is not configured; used the default retriever (${this.retriever.mode}) instead.`,
         };
     }
-    async retrieve(query) {
+    async retrieve(query, options = {}) {
+        const metadataPolicy = options.metadataPolicy ?? this.metadataPolicy;
+        if (query.strategy === 'manual') {
+            // 'manual' means the app hand-picks results (packetFromResults). Skip
+            // retrieval instead of degrading to an unrelated default retriever.
+            return packetFromResults([], {
+                query: query.query,
+                layers: query.layers,
+                budget: query.budget,
+                retrievalMode: 'manual',
+                candidateChunks: 0,
+                metadataPolicy,
+                budgetOptions: options.budgetOptions,
+                diagnosticsReasons: ['manual strategy: retrieval skipped; supply results via packetFromResults'],
+            });
+        }
         const rawChunks = await this.store.listChunks(query);
-        const { candidates, reasons: policyReasons } = await this.filterByMemoryPolicy(rawChunks, query);
+        const { candidates, reasons: policyReasons, exclusions: policyExclusions } = await this.filterByMemoryPolicy(rawChunks, query);
         const { retriever, degraded, degradedReason } = this.resolveRetriever(query.strategy);
         const queryReasons = [];
-        if (query.strategy !== 'manual' && tokenize(query.query, { stopwords: DEFAULT_STOPWORDS }).length === 0) {
+        if (tokenize(query.query, { stopwords: DEFAULT_STOPWORDS }).length === 0) {
             queryReasons.push('query produced no searchable terms');
         }
         const rawResults = await retriever.retrieve(query, candidates);
-        const ranked = rankResults(rawResults);
+        const ranked = rankResults(rawResults, query.rank ?? {});
         return packetFromResults(ranked, {
             query: query.query,
             layers: query.layers,
@@ -163,12 +221,22 @@ export class ContextEngine {
             degraded,
             degradedReason,
             candidateChunks: candidates.length,
+            metadataPolicy,
+            budgetOptions: options.budgetOptions,
+            policyExclusions,
             diagnosticsReasons: [...queryReasons, ...policyReasons, ...ranked.flatMap((result) => result.reasons ?? [])].slice(0, 12),
         });
     }
     async retrieveAndPack(options, packOptions) {
-        const packet = await this.retrieve(options);
-        return packContext(packet, { ...(options.pack ?? {}), ...(packOptions ?? {}) });
+        const mergedPackOptions = { ...(options.pack ?? {}), ...(packOptions ?? {}) };
+        const packet = await this.retrieve(options, {
+            metadataPolicy: options.metadataPolicy,
+            budgetOptions: {
+                overheadTokensPerItem: defaultItemOverheadTokens,
+                overheadTokensFixed: estimatePackFixedOverheadTokens(mergedPackOptions),
+            },
+        });
+        return packContext(packet, mergedPackOptions);
     }
 }
 export function createContextEngine(options = {}) {

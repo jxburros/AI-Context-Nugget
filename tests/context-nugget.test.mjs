@@ -118,3 +118,50 @@ test('source ranking can select files before loading them into the engine', () =
   const ranked = rankSourcesByQuery(sources, { query: 'stale memory retrieval', topK: 1 });
   assert.equal(ranked[0]?.source.id, 'issue');
 });
+
+test('groupBy: source groups rendered items and renumbers citations in reading order', async () => {
+  const engine = new ContextEngine({ chunkerOptions: { maxWords: 12, overlapWords: 0 } });
+  await engine.addSource({ id: 'doc-a', kind: 'text', title: 'Doc A', content: 'alpha topic one. alpha topic two. alpha topic three. alpha topic four. alpha topic five. alpha again six. alpha again seven. alpha again eight.' });
+  await engine.addSource({ id: 'doc-b', kind: 'text', title: 'Doc B', content: 'alpha other nine. alpha other ten.' });
+  const pack = await engine.retrieveAndPack(
+    { query: 'alpha topic', budget: { maxItems: 4 } },
+    { groupBy: 'source' },
+  );
+  const headers = pack.text.split('\n').filter((line) => line.startsWith('### '));
+  assert.ok(headers.length >= 1, 'group headers rendered');
+  assert.ok(headers.every((h) => h === '### Doc A' || h === '### Doc B'), `group headers are source labels, got: ${headers.join(', ')}`);
+  // Citations are renumbered 1..n in reading order of the rendered text.
+  const labels = pack.citations.map((c) => c.id);
+  assert.deepEqual(labels, labels.map((_, i) => `c${i + 1}`));
+  const positions = pack.citations.map((c) => pack.text.indexOf(c.label));
+  assert.ok(positions.every((p) => p >= 0), 'every citation label appears in the text');
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'citation order matches reading order');
+  // packet.items keeps ranked order with its own numbering.
+  assert.deepEqual(pack.packet.items.map((item) => item.citation.id), pack.packet.items.map((_, i) => `c${i + 1}`));
+});
+
+test('groupBy: layer renders layer group headers', async () => {
+  const engine = new ContextEngine();
+  await engine.addSource({ id: 'doc-l', kind: 'text', title: 'Doc L', content: 'omega content in documents layer' });
+  await engine.addMemory({
+    id: 'mem-l', layer: 'user', scope: 'user:1', text: 'omega preference remembered', createdAt: '2026-01-01T00:00:00.000Z', status: 'active',
+  });
+  const pack = await engine.retrieveAndPack({ query: 'omega' }, { groupBy: 'layer' });
+  const headers = pack.text.split('\n').filter((line) => line.startsWith('### '));
+  assert.ok(headers.some((h) => h.startsWith('### Layer: ')), `layer headers rendered, got: ${headers.join(', ')}`);
+});
+
+test('diagnostics.estimatedTokens converges with the measured pack estimate', async () => {
+  const engine = new ContextEngine();
+  await engine.addSource({ id: 'doc-c', kind: 'markdown', title: 'Doc C', content: '# Title\n\nSome content about convergence of budgets and packs.\n\n## Section\n\nMore content about token accounting fidelity.' });
+  const pack = await engine.retrieveAndPack(
+    { query: 'convergence token accounting' },
+    { trustBoundary: 'untrusted-source-data' },
+  );
+  const budgeted = pack.packet.diagnostics.estimatedTokens;
+  const measured = pack.tokensEstimated;
+  assert.ok(budgeted > 0 && measured > 0);
+  const ratio = budgeted / measured;
+  assert.ok(ratio > 0.75 && ratio < 1.3, `budgeted ${budgeted} vs measured ${measured}`);
+  assert.ok(pack.packet.diagnostics.overheadTokens > 0, 'overhead is accounted');
+});

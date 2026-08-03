@@ -68,16 +68,16 @@ export function clamp01(value) {
         return 0;
     return Math.max(0, Math.min(1, value));
 }
-export function daysSince(iso) {
+export function daysSince(iso, nowMs = Date.now()) {
     if (!iso)
         return null;
     const ms = Date.parse(iso);
     if (Number.isNaN(ms))
         return null;
-    return Math.max(0, (Date.now() - ms) / 86_400_000);
+    return Math.max(0, (nowMs - ms) / 86_400_000);
 }
-export function recencyBoost(iso, halfLifeDays = 30) {
-    const days = daysSince(iso);
+export function recencyBoost(iso, halfLifeDays = 30, nowMs = Date.now()) {
+    const days = daysSince(iso, nowMs);
     if (days === null)
         return 0;
     return Math.exp(-days / halfLifeDays);

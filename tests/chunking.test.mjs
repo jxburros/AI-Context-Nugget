@@ -82,3 +82,43 @@ test('stableHash produces no duplicate ids across a large generated corpus', () 
 test('stableHash output is wider than the old 7-char 32-bit hash', () => {
   assert.ok(stableHash('anything').length > 7);
 });
+
+test('markdownChunker treats "#" lines inside a fenced code block as content, not headings', () => {
+  const md = '# Title\n\n```bash\n# not a heading\n#!/bin/bash\necho hi\n```\n\nAfter fence text.\n';
+  const chunks = markdownChunker({ maxWords: 100, overlapWords: 0 }).chunk({ id: 'm', kind: 'markdown', content: md });
+  assert.ok(!chunks.some((c) => c.metadata.headingPath.includes('not a heading')));
+  const fenceChunk = chunks.find((c) => c.text.includes('#!/bin/bash'));
+  assert.ok(fenceChunk, 'the fence content should stay in a chunk');
+  assert.deepEqual(fenceChunk.metadata.headingPath, ['Title']);
+  assert.ok(fenceChunk.text.includes('# not a heading'), 'fence content stays inside the enclosing section');
+  assert.ok(fenceChunk.text.includes('After fence text.'), 'text after the fence stays in the same section');
+});
+
+test('markdownChunker treats "~~~" fences the same as backtick fences', () => {
+  const md = '# Title\n\n~~~bash\n# not a heading\n~~~\n\nAfter fence text.\n';
+  const chunks = markdownChunker({ maxWords: 100, overlapWords: 0 }).chunk({ id: 'm', kind: 'markdown', content: md });
+  assert.ok(!chunks.some((c) => c.metadata.headingPath.includes('not a heading')));
+  const fenceChunk = chunks.find((c) => c.text.includes('~~~'));
+  assert.ok(fenceChunk);
+  assert.deepEqual(fenceChunk.metadata.headingPath, ['Title']);
+  assert.ok(fenceChunk.text.includes('After fence text.'));
+});
+
+test('markdownChunker keeps everything after an unclosed fence in one section', () => {
+  const md = '# Title\n\n```\nunclosed fence\n# still not a heading\nmore text\n';
+  const chunks = markdownChunker({ maxWords: 100, overlapWords: 0 }).chunk({ id: 'm', kind: 'markdown', content: md });
+  assert.equal(chunks.length, 1);
+  assert.deepEqual(chunks[0].metadata.headingPath, ['Title']);
+  assert.ok(chunks[0].text.includes('# still not a heading'));
+});
+
+test('markdownChunker closes a fence only when the closing run is at least as long as the opening run', () => {
+  const md = '# Title\n\n```\ncode here\n````\n\nAfter.\n\n## Second\n\nmore\n';
+  const chunks = markdownChunker({ maxWords: 100, overlapWords: 0 }).chunk({ id: 'm', kind: 'markdown', content: md });
+  assert.equal(chunks.length, 2);
+  const firstChunk = chunks.find((c) => c.text.includes('code here'));
+  assert.deepEqual(firstChunk.metadata.headingPath, ['Title']);
+  assert.ok(firstChunk.text.includes('After.'), 'the closed fence lets section content continue normally');
+  const secondChunk = chunks.find((c) => c.metadata.headingPath.includes('Second'));
+  assert.ok(secondChunk, 'the heading after the closed fence is recognized');
+});

@@ -19,8 +19,27 @@ export function memoryRecordFromCandidate(candidate, decision) {
         expiresAt: decision?.record?.expiresAt,
         status: decision?.record?.status ?? 'active',
         supersedes: decision?.record?.supersedes,
+        observedAt: decision?.record?.observedAt ?? now,
+        validFrom: decision?.record?.validFrom,
+        validTo: decision?.record?.validTo,
+        reviewAt: decision?.record?.reviewAt,
         metadata: { ...candidate.metadata, ...decision?.record?.metadata },
     };
+}
+/**
+ * True when the record carries a `reviewAt` date at or before the reference
+ * time (default: now). Advisory only — review dates never affect retrieval.
+ */
+export function isDueForReview(record, asOf) {
+    if (!record.reviewAt)
+        return false;
+    const review = Date.parse(record.reviewAt);
+    if (Number.isNaN(review))
+        return false;
+    const ref = asOf ? Date.parse(asOf) : Date.now();
+    if (Number.isNaN(ref))
+        return false;
+    return review <= ref;
 }
 export function memoryToChunk(record) {
     const source = record.source ?? {
@@ -34,6 +53,7 @@ export function memoryToChunk(record) {
         text: record.text,
         layer: record.layer,
         trust: 'user',
+        authorityClass: 'derived_content',
         metadata: {
             ...(record.metadata ?? {}),
             memoryId: record.id,
