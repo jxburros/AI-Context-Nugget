@@ -100,7 +100,7 @@ export function packetFromResults(results, options) {
             candidateChunks: options.candidateChunks ?? results.length,
             retrievedResults: results.length,
             returnedItems: items.length,
-            excludedItems: report.excluded.length,
+            excludedItems: exclusions.length,
             estimatedTokens: report.tokensEstimated,
             estimatedChars: report.chars,
             overheadTokens: report.overheadTokens,
@@ -162,13 +162,27 @@ export function packContext(packet, options = {}) {
         });
         displayItems = renumbered;
     }
-    if (options.format === 'plain') {
-        if (heading)
-            lines.push(heading, '');
-        if (groups) {
-            for (const group of groups) {
-                lines.push(group.label, '');
-                for (const item of group.items) {
+    // A packet with no items packs to empty text. Emitting a bare heading (or an
+    // untrusted-source fence wrapped around one) would announce context to the
+    // model that does not exist; the degraded/diagnostic story stays on the
+    // packet. Callers that inject text conditionally — e.g.
+    // `asAiNuggetContextMessages` — then correctly emit nothing.
+    if (packet.items.length > 0) {
+        if (options.format === 'plain') {
+            if (heading)
+                lines.push(heading, '');
+            if (groups) {
+                for (const group of groups) {
+                    lines.push(group.label, '');
+                    for (const item of group.items) {
+                        lines.push(itemHeader(item, options));
+                        lines.push(itemText(item));
+                        lines.push('');
+                    }
+                }
+            }
+            else {
+                for (const item of displayItems) {
                     lines.push(itemHeader(item, options));
                     lines.push(itemText(item));
                     lines.push('');
@@ -176,40 +190,33 @@ export function packContext(packet, options = {}) {
             }
         }
         else {
-            for (const item of displayItems) {
-                lines.push(itemHeader(item, options));
-                lines.push(itemText(item));
-                lines.push('');
+            if (heading)
+                lines.push(`## ${heading}`, '');
+            if (packet.degraded && packet.degradedReason)
+                lines.push(`_Retrieval degraded: ${packet.degradedReason}_`, '');
+            if (groups) {
+                for (const group of groups) {
+                    lines.push(`### ${group.label}`, '');
+                    for (const item of group.items) {
+                        lines.push(`#### ${itemHeader(item, options)}`);
+                        lines.push('');
+                        lines.push(itemText(item));
+                        lines.push('');
+                    }
+                }
             }
-        }
-    }
-    else {
-        if (heading)
-            lines.push(`## ${heading}`, '');
-        if (packet.degraded && packet.degradedReason)
-            lines.push(`_Retrieval degraded: ${packet.degradedReason}_`, '');
-        if (groups) {
-            for (const group of groups) {
-                lines.push(`### ${group.label}`, '');
-                for (const item of group.items) {
-                    lines.push(`#### ${itemHeader(item, options)}`);
+            else {
+                for (const item of displayItems) {
+                    lines.push(`### ${itemHeader(item, options)}`);
                     lines.push('');
                     lines.push(itemText(item));
                     lines.push('');
                 }
             }
         }
-        else {
-            for (const item of displayItems) {
-                lines.push(`### ${itemHeader(item, options)}`);
-                lines.push('');
-                lines.push(itemText(item));
-                lines.push('');
-            }
-        }
     }
     let text = lines.join('\n').trim();
-    if (options.trustBoundary === 'untrusted-source-data')
+    if (text && options.trustBoundary === 'untrusted-source-data')
         text = wrapUntrustedSourceData(text, { nonce: options.trustBoundaryNonce });
     const citations = includeCitations
         ? displayItems.map((item, i) => item.citation ?? createCitation(item.source, i + 1))

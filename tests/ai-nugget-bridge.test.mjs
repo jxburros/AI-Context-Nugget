@@ -61,3 +61,17 @@ test('hasAiNuggetContext acts as a boolean-returning guard over asAiNuggetMetada
   assert.equal(typeof result, 'boolean');
   assert.equal(result, true);
 });
+
+test('a packet with no items packs to empty text, so the bridge emits no messages', async () => {
+  const engine = new ContextEngine();
+  await engine.addSource({ id: 'doc', kind: 'text', content: 'alpha beta gamma' });
+  const pack = await engine.retrieveAndPack(
+    { query: 'nothingherematchesthisquery' },
+    { trustBoundary: 'untrusted-source-data', includeCitations: true },
+  );
+  assert.equal(pack.packet.items.length, 0);
+  assert.equal(pack.text, '');
+  assert.equal(pack.tokensEstimated, 0);
+  assert.deepEqual(pack.citations, []);
+  assert.deepEqual(asAiNuggetContextMessages(pack), []);
+});

@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- **A packet with no items now packs to empty text.** `packContext` previously
+  emitted a bare `## Relevant context` heading (and, with
+  `trustBoundary: 'untrusted-source-data'`, an untrusted-source fence wrapped
+  around that heading) for an empty packet, announcing context to the model
+  that did not exist. As a result `asAiNuggetContextMessages` returned a
+  content-free system message instead of no messages, contradicting its
+  documented contract. `pack.citations` is `[]` and `pack.tokensEstimated` is
+  `0` for such packs; the degraded/diagnostic story stays on the packet.
+- `diagnostics.excludedItems` counts memory-policy drops alongside budget
+  drops, so it matches `packet.exclusions.length` instead of silently
+  under-reporting policy-filtered candidates.
+- `package.json` `files` ships `docs/security-model.md`. Both `README.md` and
+  `design.md` link to it and both are published, so the reference was dead in
+  the npm tarball.
+- `.markdownlint-cli2.jsonc` declares `globs`. Without it a bare
+  `markdownlint-cli2` matched no files and reported a vacuous
+  "0 issues in 0 files"; it now lints the 17 live markdown files.
+
+### Changed
+
+- CI/publish/Pages workflows use `actions/checkout@v5` and
+  `actions/setup-node@v5`; the `@v4` pins target the deprecated Node 20 runner
+  and were being force-migrated with a warning on every run.
+- `.gitignore` covers `*.tgz` and `_site/` so a local `npm pack`
+  (release-checklist step 3) or Pages build no longer pollutes the
+  `git status --porcelain` drift checks.
+- Internal de-duplication, no behavior change: `InMemoryContextStore` uses
+  `isHiddenFromAI`, the chunkers use `trustForSource`, `metadataMatches` drops
+  a dead `Array.isArray` re-check, and `jsonStoreSnapshot` is marked
+  `@deprecated` (it is a pass-through for `store.export()`).
+
 ## 0.5.0
 
 Implements the highest-value recommendations from the AI context systems
@@ -100,7 +135,9 @@ QA-generated issues.
   `MyBearer ...`) are no longer false positives.
 - `wrapUntrustedSourceData` validates the nonce against `[A-Za-z0-9_-]+` and
   throws on anything that would make the fence ambiguous.
-- `npm test` uses a shell-independent glob (`node --test "tests/*.test.mjs"`).
+- `npm test` uses argument-less `node --test` (shell-independent, and Node 20's
+  test runner does not expand glob arguments); discovery still resolves to
+  `tests/*.test.mjs`.
 - `package.json` `files` now ships `dist/**/*.js.map`, fixing broken
   `sourceMappingURL` references in the published tarball; `package-lock.json`
   version drift (0.1.0) fixed.

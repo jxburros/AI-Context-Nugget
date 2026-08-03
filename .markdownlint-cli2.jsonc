@@ -10,6 +10,11 @@
     // Historical audit docs use compact table pipes throughout.
     "MD060": false
   },
+  // Without an explicit glob set, a bare `markdownlint-cli2` invocation
+  // matches nothing and reports a vacuous "0 issues in 0 files".
+  "globs": [
+    "**/*.md"
+  ],
   "ignores": [
     "node_modules/**",
     "dist/**",

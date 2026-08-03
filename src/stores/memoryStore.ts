@@ -1,4 +1,5 @@
 import type { ChunkFilter, ContextChunk, ContextSource, ContextStore, MemoryRecord, RetrievalQuery, StoreSnapshot } from '../types.js';
+import { isHiddenFromAI } from '../safety.js';
 import { metadataMatches, nowIso } from '../util.js';
 
 /**
@@ -60,7 +61,7 @@ export class InMemoryContextStore implements ContextStore {
   }
 
   listChunks(query?: RetrievalQuery): ContextChunk[] {
-    const sourceVisibility = new Map([...this.sources.values()].map((s) => [s.id, s.metadata?.hideFromAI !== true]));
+    const sourceVisibility = new Map([...this.sources.values()].map((s) => [s.id, !isHiddenFromAI(s)]));
     return [...this.chunks.values()].filter((chunk) => {
       if (sourceVisibility.get(chunk.source.sourceId) === false) return false;
       const memoryId = chunk.metadata?.memoryId;
@@ -125,6 +126,7 @@ export class InMemoryContextStore implements ContextStore {
   }
 }
 
+/** @deprecated Pass-through for `store.export()`; call that directly instead. */
 export function jsonStoreSnapshot(store: ContextStore): StoreSnapshot | Promise<StoreSnapshot> {
   return store.export();
 }

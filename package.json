@@ -49,6 +49,7 @@
     "nugget",
     "README.md",
     "design.md",
+    "docs/security-model.md",
     "CHANGELOG.md",
     "recipes",
     "LICENSE"

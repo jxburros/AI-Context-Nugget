@@ -227,6 +227,8 @@ const pack = packContext(packet, {
 });
 ```
 
+A packet with no items packs to empty `text` (no heading, no trust fence, no citations), so injecting `pack.text` — or `asAiNuggetContextMessages(pack)` — never announces context that does not exist. Whether retrieval degraded, and why nothing was included, stays on `packet.degraded`/`packet.diagnostics`.
+
 The packet answers the questions the app and user will eventually care about: what was searched (`diagnostics.candidateChunks`), what the retriever returned before budgeting (`diagnostics.retrievedResults`), what was actually included/excluded, which sources were used, whether retrieval degraded, how much budget was used, and what text the model would see.
 
 ## Trust boundary and redaction

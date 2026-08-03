@@ -1,5 +1,5 @@
 import { estimateTokens, makeId } from './util.js';
-import { defaultAuthorityClass } from './safety.js';
+import { defaultAuthorityClass, trustForSource } from './safety.js';
 function sourceRefFor(source, extra = {}) {
     return {
         sourceId: source.id,
@@ -84,7 +84,7 @@ export function textChunker(defaults = {}) {
                     source: sourceRefFor(source, { lineStart, lineEnd }),
                     text: chunk.text,
                     layer,
-                    trust: source.trust ?? 'untrusted',
+                    trust: trustForSource(source),
                     authorityClass: defaultAuthorityClass(source),
                     metadata: { ...source.metadata, chunkIndex: index, startWord: chunk.startWord, endWord: chunk.endWord },
                     tokensEstimated: estimateTokens(chunk.text),
@@ -220,7 +220,7 @@ export function markdownChunker(defaults = {}) {
                         source: sourceRefFor(source, { section: sectionLabel, lineStart, lineEnd }),
                         text: piece.text,
                         layer,
-                        trust: source.trust ?? 'untrusted',
+                        trust: trustForSource(source),
                         authorityClass: defaultAuthorityClass(source),
                         metadata: { ...source.metadata, chunkIndex: chunks.length, headingPath: section.headingPath },
                         tokensEstimated: estimateTokens(piece.text),
