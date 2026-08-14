@@ -320,3 +320,9 @@ Changed since 0.5.0:
 Full history: `CHANGELOG.md`.
 
 <!-- GitHub Pages deployment is configured in .github/workflows/pages.yml. -->
+
+---
+
+## Project Stewardship
+
+This project is developed by **Jeffrey** through **JX Holdings, LLC**. GitHub: [`jxburros`](https://github.com/jxburros).
