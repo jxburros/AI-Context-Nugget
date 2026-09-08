@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Added the official Context Nugget logo at `assets/context-nugget-logo.png` and display it in the README.
+
+### Notes
+
+- Validation: verified the PNG dimensions (1254 × 1254) and transparent alpha background. Automated tests not run because this is an asset-and-documentation-only change.
+
 ## 0.5.1
 
 A correctness and release-readiness pass over the 0.5.0 tree: one honesty fix
