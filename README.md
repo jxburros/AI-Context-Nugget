@@ -1,5 +1,7 @@
 # Context Nugget
 
+<img src="assets/context-nugget-logo.png" alt="Context Nugget official logo" width="180" />
+
 Context Nugget is a lightweight TypeScript SDK for **auditable, cited, budgeted context packets** for AI apps.
 
 It helps turn documents, memories, app state, workspace state, tool results, repo files, issue text, generated artifacts, and other sources into structured, cited, model-ready context.
