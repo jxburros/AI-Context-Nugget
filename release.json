@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "apps": {
+    "context-nugget": {
+      "title": "AI-Context-Nugget",
+      "version": "0.5.1"
+    }
+  }
+}

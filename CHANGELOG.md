@@ -294,3 +294,18 @@ First publishable release. Implements the fixes and hardening from `docs/audit-2
 ## 0.1.0
 
 Initial seed release (unpublished).
+
+### Release infrastructure migration — 2026-10-20
+
+- Adopt the unified release manifest, version-advance validation, manual main-only planning, complete artifact staging, and verified draft publisher. Preserve local packaging, existing updater trust, and distribution identities.
+- Validation: shared engine tests, workflow lint, and prepared manifest/version checks. Native/hosted consumer release dry runs and publication remain unverified until the migration is merged and credentials/settings are checked.
+
+## 2026-10-21 — Release check fixes
+
+### Changed
+
+- Use a Markdown logo and normalize trailing whitespace so the README passes Markdown lint.
+
+### Notes
+
+- Repository Markdown lint passes locally.

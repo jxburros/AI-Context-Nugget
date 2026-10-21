@@ -1,6 +1,6 @@
 # Context Nugget
 
-<img src="assets/context-nugget-logo.png" alt="Context Nugget official logo" width="180" />
+![Context Nugget official logo](assets/context-nugget-logo.png)
 
 Context Nugget is a lightweight TypeScript SDK for **auditable, cited, budgeted context packets** for AI apps.
 
@@ -291,6 +291,18 @@ consuming repo can read it from `node_modules/@jxburros/context-nugget/SKILL.md`
   every version bump (docs/release-checklist.md step 1). `npm run verify:readme`
   fails if its version heading drifts from package.json.
 -->
+## Unified release procedure
+
+`release.json` is the authoritative release manifest. Keep configured embedded versions synchronized and advance affected apps (patch by default) before merging changes into main. The first adoption establishes a baseline; later PRs must pass **Release version validation**.
+
+Use **Actions → Release → Run workflow** from **main**, choose stable or preview, and leave **dry_run** enabled first. Only apps ahead of their published version in their own namespace are selected. Build/test/sign all required packages before publishing. Tag pushes and merges no longer publish migrated apps automatically. After inspecting the dry run, dispatch with dry_run disabled and satisfy configured approvals. Published versions are never overwritten; use a new version for a correction.
+
+See [.release/README.md](.release/README.md) for this repository's inventory, credentials, compatibility, and validation limits. Shared implementation: [JX Holdings release infrastructure](https://github.com/JX-Holdings-LLC/release-infrastructure).
+
+## Project Stewardship
+
+This project is developed by **Jeffrey** through **JX Holdings, LLC**. GitHub: [`jxburros`](https://github.com/jxburros).
+
 ## Current release — 0.5.1
 
 A correctness and release-readiness pass over 0.5.0. No API was added or
@@ -322,9 +334,3 @@ Changed since 0.5.0:
 Full history: `CHANGELOG.md`.
 
 <!-- GitHub Pages deployment is configured in .github/workflows/pages.yml. -->
-
----
-
-## Project Stewardship
-
-This project is developed by **Jeffrey** through **JX Holdings, LLC**. GitHub: [`jxburros`](https://github.com/jxburros).
