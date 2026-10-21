@@ -1,6 +1,6 @@
 # Context Nugget
 
-<img src="assets/context-nugget-logo.png" alt="Context Nugget official logo" width="180" />
+![Context Nugget official logo](assets/context-nugget-logo.png)
 
 Context Nugget is a lightweight TypeScript SDK for **auditable, cited, budgeted context packets** for AI apps.
 
@@ -334,4 +334,3 @@ Changed since 0.5.0:
 Full history: `CHANGELOG.md`.
 
 <!-- GitHub Pages deployment is configured in .github/workflows/pages.yml. -->
-
